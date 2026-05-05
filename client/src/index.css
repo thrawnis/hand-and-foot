@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    font-family: system-ui, -apple-system, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    @apply bg-felt-900 text-white;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-felt-900;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-felt-600 rounded-full;
+  }
+}
+
+@layer utilities {
+  .bg-felt-texture {
+    background: radial-gradient(ellipse at center, #1b5e20 0%, #144d1a 40%, #0d3b12 100%);
+    background-attachment: fixed;
+  }
+}
+
+/* Card font */
+.card-rank {
+  font-family: 'Georgia', serif;
+  font-weight: 700;
+}
+
+/* Prevent text selection on cards */
+.card-no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Touch action for drag */
+.draggable {
+  touch-action: none;
+}
