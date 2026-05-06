@@ -12,6 +12,9 @@ services:
       - ADMIN_PATH=${ADMIN_PATH:-/admin}
       - DB_PATH=/data/handf.db
     volumes:
+      - .:/app                              # full repo (with .git) mounted into container
+      - node_modules_client:/app/client/node_modules  # persist npm cache between restarts
+      - node_modules_server:/app/server/node_modules
       - ./data:/data
     restart: unless-stopped
     healthcheck:
@@ -19,3 +22,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+volumes:
+  node_modules_client:
+  node_modules_server:
