@@ -16,6 +16,7 @@ interface TeamBooksPanelProps {
 }
 
 const RANKS: Rank[] = ['A', 'K', 'Q', 'J', '10', '9', '8', '7', '6', '5', '4', '3', '2'];
+const RANK_ORDER = Object.fromEntries(RANKS.map((r, i) => [r, i])) as Record<string, number>;
 
 export function TeamBooksPanel({ team, gameState, isMyTeam, isMyTurn, collapsed = false }: TeamBooksPanelProps) {
   const { selectedCardIds, clearSelection } = useGameStore();
@@ -94,7 +95,7 @@ export function TeamBooksPanel({ team, gameState, isMyTeam, isMyTurn, collapsed 
                 <p className="text-felt-500 text-sm text-center py-2">No books yet</p>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {team.books.map((book) => (
+                  {[...team.books].sort((a, b) => (RANK_ORDER[a.rank] ?? 99) - (RANK_ORDER[b.rank] ?? 99)).map((book) => (
                     <BookDisplay
                       key={book.id}
                       book={book}

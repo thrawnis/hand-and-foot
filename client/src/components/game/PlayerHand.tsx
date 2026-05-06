@@ -24,7 +24,6 @@ function SortableCard({ card, selected, onSelect, isMyTurn, isDrawPhase }: Sorta
   } = useSortable({
     id: card.id,
     data: { card, type: 'hand-card' },
-    disabled: !isMyTurn || isDrawPhase,
   });
 
   const style = {
