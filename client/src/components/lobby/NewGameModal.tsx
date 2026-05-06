@@ -48,6 +48,7 @@ export function NewGameModal({ open, onClose }: NewGameModalProps) {
   const [step, setStep] = useState<'players' | 'rules' | 'review'>('players');
   const [playerCount, setPlayerCount] = useState(4);
   const [playerNames, setPlayerNames] = useState(['', '', '', '']);
+  const [teamNames, setTeamNames] = useState(['', '']);
   const [rules, setRules] = useState<GameRules>({ ...DEFAULT_RULES });
   const [presets, setPresets] = useState<RulePreset[]>([]);
   const [loading, setLoading] = useState(false);
@@ -85,12 +86,11 @@ export function NewGameModal({ open, onClose }: NewGameModalProps) {
     setPlayerNames(shuffle(playerNames));
   };
 
+  const resolvedNames = playerNames.map((n, i) => n.trim() || `Player ${i + 1}`);
+  const resolvedTeamNames = teamNames.map((n, i) => n.trim() || `Team ${i + 1}`);
+
   const handleSubmit = async () => {
-    const names = playerNames.map((n) => n.trim());
-    if (names.some((n) => !n)) {
-      toast.error('All player names are required');
-      return;
-    }
+    const names = resolvedNames;
     if (new Set(names.map((n) => n.toLowerCase())).size !== names.length) {
       toast.error('Player names must be unique');
       return;
@@ -101,7 +101,7 @@ export function NewGameModal({ open, onClose }: NewGameModalProps) {
       const res = await fetch('/api/games', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ hostName: names[0], playerNames: names, rules }),
+        body: JSON.stringify({ hostName: names[0], playerNames: names, teamNames: resolvedTeamNames, rules }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -170,9 +170,29 @@ export function NewGameModal({ open, onClose }: NewGameModalProps) {
               </div>
             </div>
 
+            {/* Team names */}
+            {playerCount >= 2 && (
+              <div>
+                <label className="block text-sm font-medium text-felt-200 mb-2">Team Names <span className="text-felt-500 font-normal">(optional)</span></label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[0, 1].map((t) => (
+                    <input
+                      key={t}
+                      value={teamNames[t]}
+                      onChange={(e) => { const n = [...teamNames]; n[t] = e.target.value; setTeamNames(n); }}
+                      placeholder={`Team ${t + 1}`}
+                      className={`w-full bg-felt-700 border rounded-lg px-3 py-2 text-white placeholder-felt-400 focus:outline-none focus:border-gold-500 ${t === 0 ? 'border-blue-700' : 'border-red-800'}`}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="text-sm font-medium text-felt-200">Player Names (in turn order)</label>
+                <label className="text-sm font-medium text-felt-200">
+                  Player Names <span className="text-felt-500 font-normal">(optional — defaults to Player #)</span>
+                </label>
                 <Button variant="ghost" size="sm" onClick={handleScramble}>🔀 Scramble</Button>
               </div>
               <div className="grid grid-cols-2 gap-2">
@@ -198,8 +218,8 @@ export function NewGameModal({ open, onClose }: NewGameModalProps) {
               </div>
               {playerCount > 2 && (
                 <p className="text-xs text-felt-400 mt-2">
-                  Team 1: {playerNames.filter((_, i) => i % 2 === 0).filter(Boolean).join(', ') || '—'} &nbsp;|&nbsp;
-                  Team 2: {playerNames.filter((_, i) => i % 2 === 1).filter(Boolean).join(', ') || '—'}
+                  {resolvedTeamNames[0]}: {resolvedNames.filter((_, i) => i % 2 === 0).join(', ')} &nbsp;|&nbsp;
+                  {resolvedTeamNames[1]}: {resolvedNames.filter((_, i) => i % 2 === 1).join(', ')}
                 </p>
               )}
             </div>

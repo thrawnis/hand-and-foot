@@ -65,6 +65,12 @@ export interface GameRules {
 export type TurnPhase = 'draw' | 'play' | 'discard';
 export type GameStatus = 'waiting' | 'active' | 'completed' | 'archived';
 
+export interface UndoRequest {
+  requestedByIndex: number;
+  approvals: number[];
+  denials: number[];
+}
+
 export interface LogEntry {
   timestamp: number;
   playerName: string;
@@ -98,6 +104,8 @@ export interface GameState {
   roundScores: RoundScore[][];
   winnerTeamIndex?: number;
   drawnFromDiscard: boolean;
+  lastTurnSnapshot: Omit<GameState, 'lastTurnSnapshot' | 'undoRequest'> | null;
+  undoRequest: UndoRequest | null;
 }
 
 // What each client sees (hands masked for non-self players)
@@ -131,6 +139,8 @@ export interface ClientGameState {
   winnerTeamIndex?: number;
   myPlayerIndex: number;
   drawnFromDiscard: boolean;
+  undoRequest: UndoRequest | null;
+  hasUndoSnapshot: boolean;
 }
 
 export interface LobbyGame {
@@ -189,6 +199,7 @@ export interface CreateGamePayload {
   hostName: string;
   rules: GameRules;
   playerNames: string[];
+  teamNames?: string[];
 }
 
 export interface SecondTabPrompt {

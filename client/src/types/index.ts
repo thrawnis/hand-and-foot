@@ -53,6 +53,12 @@ export interface GameRules {
 export type TurnPhase = 'draw' | 'play' | 'discard';
 export type GameStatus = 'waiting' | 'active' | 'completed' | 'archived';
 
+export interface UndoRequest {
+  requestedByIndex: number;
+  approvals: number[];
+  denials: number[];
+}
+
 export interface LogEntry {
   timestamp: number;
   playerName: string;
@@ -98,6 +104,8 @@ export interface ClientGameState {
   winnerTeamIndex?: number;
   myPlayerIndex: number;
   drawnFromDiscard: boolean;
+  undoRequest: UndoRequest | null;
+  hasUndoSnapshot: boolean;
 }
 
 export interface LobbyGame {

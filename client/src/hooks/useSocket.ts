@@ -157,3 +157,11 @@ export function subscribeToLobby() {
 export function unsubscribeFromLobby() {
   getSocket().emit('lobby:unsubscribe');
 }
+
+export function requestUndo() {
+  getSocket().emit('game:request-undo');
+}
+
+export function respondUndo(approve: boolean) {
+  getSocket().emit('game:respond-undo', { approve });
+}

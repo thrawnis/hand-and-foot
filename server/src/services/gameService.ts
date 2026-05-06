@@ -91,13 +91,20 @@ function reshuffleDiscardIntoStock(state: GameState): void {
 
 // ── Game creation ─────────────────────────────────────────────────────────────
 
+function snapshotState(state: GameState): Omit<GameState, 'lastTurnSnapshot' | 'undoRequest'> {
+  // Deep copy via JSON (acceptable for game state size)
+  const { lastTurnSnapshot, undoRequest, ...rest } = state;
+  return JSON.parse(JSON.stringify(rest));
+}
+
 export function createGame(payload: CreateGamePayload): GameState {
-  const { hostName, rules, playerNames } = payload;
+  const { hostName, rules, playerNames, teamNames } = payload;
   const deckCount = rules.playerCount + 1;
   const fullRules = { ...DEFAULT_RULES, ...rules, deckCount };
 
   let stock = buildMultiDeck(deckCount);
-  const players: Player[] = playerNames.map((name, i) => {
+  const players: Player[] = playerNames.map((rawName, i) => {
+    const name = rawName.trim() || `Player ${i + 1}`;
     const { dealt: hand, remaining: r1 } = dealCards(stock, fullRules.cardsPerHand);
     stock = r1;
     const { dealt: foot, remaining: r2 } = dealCards(stock, fullRules.cardsPerHand);
@@ -105,7 +112,7 @@ export function createGame(payload: CreateGamePayload): GameState {
     return {
       id: uuidv4(),
       name,
-      teamIndex: i % 2, // teams alternate: 0,1,0,1,...
+      teamIndex: i % 2,
       hand: sortHand(hand),
       foot: sortHand(foot),
       inFoot: false,
@@ -115,12 +122,12 @@ export function createGame(payload: CreateGamePayload): GameState {
   });
 
   // Build teams
-  const teamCount = fullRules.playerCount === 2 ? 1 : 2;
+  const teamCount = fullRules.playerCount === 2 ? 2 : 2;
   const teams: Team[] = [];
   for (let t = 0; t < teamCount; t++) {
     teams.push({
       index: t,
-      name: `Team ${t + 1}`,
+      name: teamNames?.[t]?.trim() || `Team ${t + 1}`,
       playerIndices: players.reduce<number[]>((acc, p, i) => (p.teamIndex === t ? [...acc, i] : acc), []),
       books: [],
       hasOpened: false,
@@ -128,19 +135,12 @@ export function createGame(payload: CreateGamePayload): GameState {
     });
   }
 
-  // For 2-player, both on team 0 but play as individuals — override teamIndex
+  // For 2-player, teams are 1v1
   if (fullRules.playerCount === 2) {
     players[0].teamIndex = 0;
     players[1].teamIndex = 1;
     teams[0].playerIndices = [0];
-    teams.push({
-      index: 1,
-      name: 'Team 2',
-      playerIndices: [1],
-      books: [],
-      hasOpened: false,
-      allInFoot: false,
-    });
+    teams[1].playerIndices = [1];
   }
 
   const state: GameState = {
@@ -160,6 +160,8 @@ export function createGame(payload: CreateGamePayload): GameState {
     log: [],
     roundScores: [],
     drawnFromDiscard: false,
+    lastTurnSnapshot: null,
+    undoRequest: null,
   };
 
   log(state, 'System', `Game started. Round 1 of ${fullRules.numRounds}.`);
@@ -203,6 +205,8 @@ export function toClientState(state: GameState, playerIndex: number): ClientGame
     winnerTeamIndex: state.winnerTeamIndex,
     myPlayerIndex: playerIndex,
     drawnFromDiscard: state.drawnFromDiscard,
+    undoRequest: state.undoRequest,
+    hasUndoSnapshot: state.lastTurnSnapshot !== null,
   };
 }
 
@@ -225,6 +229,11 @@ export function toLobbyGame(state: GameState): LobbyGame {
 export function drawFromStock(state: GameState, playerIndex: number): { ok: boolean; error?: string } {
   if (state.currentPlayerIndex !== playerIndex) return { ok: false, error: 'Not your turn' };
   if (state.turnPhase !== 'draw') return { ok: false, error: 'Already drew this turn' };
+
+  // Save snapshot before first draw of turn (in case undo is requested)
+  if (!state.lastTurnSnapshot) {
+    state.lastTurnSnapshot = snapshotState(state);
+  }
 
   if (state.stockPile.length < 2) {
     reshuffleDiscardIntoStock(state);
@@ -259,6 +268,11 @@ export function drawFromDiscard(state: GameState, playerIndex: number, payload: 
 
   const player = state.players[playerIndex];
   const source = player.inFoot ? player.foot : player.hand;
+
+  // Save snapshot before draw from discard
+  if (!state.lastTurnSnapshot) {
+    state.lastTurnSnapshot = snapshotState(state);
+  }
 
   const matchingInHand = source.filter((c) => c.rank === topCard.rank && !c.isWild);
   if (matchingInHand.length < 2) return { ok: false, error: 'Need 2 matching cards in hand to take discard' };
@@ -439,11 +453,63 @@ export function discardCard(state: GameState, playerIndex: number, payload: Disc
     log(state, player.name, 'Picked up foot');
   }
 
+  // Save snapshot for the incoming player's turn (enables undo)
+  state.lastTurnSnapshot = snapshotState(state);
+  state.undoRequest = null;
+
   state.turnPhase = 'draw';
   state.currentPlayerIndex = nextPlayerIndex(state);
   log(state, player.name, `Discarded ${card.rank} of ${card.suit}`);
   saveGame(state);
   return { ok: true };
+}
+
+export function requestUndo(state: GameState, playerIndex: number): { ok: boolean; error?: string } {
+  if (!state.lastTurnSnapshot) return { ok: false, error: 'Nothing to undo' };
+  if (state.undoRequest) return { ok: false, error: 'An undo request is already pending' };
+  state.undoRequest = {
+    requestedByIndex: playerIndex,
+    approvals: [playerIndex],
+    denials: [],
+  };
+  log(state, state.players[playerIndex].name, 'Requested an undo — waiting for all players to approve');
+  saveGame(state);
+  return { ok: true };
+}
+
+export function respondUndo(
+  state: GameState,
+  playerIndex: number,
+  approve: boolean,
+): { ok: boolean; error?: string; applied?: boolean } {
+  if (!state.undoRequest) return { ok: false, error: 'No undo request pending' };
+  if (state.undoRequest.approvals.includes(playerIndex) || state.undoRequest.denials.includes(playerIndex)) {
+    return { ok: false, error: 'Already responded' };
+  }
+
+  const player = state.players[playerIndex];
+
+  if (!approve) {
+    log(state, player.name, 'Denied the undo request');
+    state.undoRequest = null;
+    saveGame(state);
+    return { ok: true, applied: false };
+  }
+
+  state.undoRequest.approvals.push(playerIndex);
+
+  if (state.undoRequest.approvals.length >= state.players.length) {
+    // Everyone approved — apply undo
+    const snap = state.lastTurnSnapshot!;
+    Object.assign(state, snap, { lastTurnSnapshot: null, undoRequest: null });
+    log(state, 'System', 'Undo approved by all players — last turn reverted');
+    saveGame(state);
+    return { ok: true, applied: true };
+  }
+
+  log(state, player.name, 'Approved the undo request');
+  saveGame(state);
+  return { ok: true, applied: false };
 }
 
 export function goOut(state: GameState, playerIndex: number): { ok: boolean; error?: string } {

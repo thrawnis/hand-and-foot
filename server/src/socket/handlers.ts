@@ -5,7 +5,7 @@ import {
 } from '../types';
 import {
   toClientState, toLobbyGame, drawFromStock, drawFromDiscard,
-  playCards, closeBook, discardCard, goOut,
+  playCards, closeBook, discardCard, goOut, requestUndo, respondUndo,
 } from '../services/gameService';
 import { loadGameByCode, saveGame, listGames } from '../db';
 
@@ -203,6 +203,28 @@ export function registerSocketHandlers(io: Server): void {
       if (!result.ok) { socket.emit('game:error', { message: result.error }); return; }
       broadcastGame(io, state);
       broadcastLobby(io);
+    });
+
+    socket.on('game:request-undo', () => {
+      const info = socketGameMap.get(socket.id);
+      if (!info) { socket.emit('game:error', { message: 'Not in a game' }); return; }
+      const state = loadGameByCode(info.gameCode);
+      if (!state) { socket.emit('game:error', { message: 'Game not found' }); return; }
+
+      const result = requestUndo(state, info.playerIndex);
+      if (!result.ok) { socket.emit('game:error', { message: result.error }); return; }
+      broadcastGame(io, state);
+    });
+
+    socket.on('game:respond-undo', (payload: { approve: boolean }) => {
+      const info = socketGameMap.get(socket.id);
+      if (!info) { socket.emit('game:error', { message: 'Not in a game' }); return; }
+      const state = loadGameByCode(info.gameCode);
+      if (!state) { socket.emit('game:error', { message: 'Game not found' }); return; }
+
+      const result = respondUndo(state, info.playerIndex, payload.approve);
+      if (!result.ok) { socket.emit('game:error', { message: result.error }); return; }
+      broadcastGame(io, state);
     });
 
     socket.on('disconnect', () => {
