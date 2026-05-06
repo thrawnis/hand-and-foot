@@ -49,6 +49,7 @@ export function NewGameModal({ open, onClose }: NewGameModalProps) {
   const [playerCount, setPlayerCount] = useState(4);
   const [playerNames, setPlayerNames] = useState(['', '', '', '']);
   const [teamNames, setTeamNames] = useState(['', '']);
+  const [botSlots, setBotSlots] = useState<boolean[]>([false, false, false, false]);
   const [rules, setRules] = useState<GameRules>({ ...DEFAULT_RULES });
   const [presets, setPresets] = useState<RulePreset[]>([]);
   const [loading, setLoading] = useState(false);
@@ -65,6 +66,11 @@ export function NewGameModal({ open, onClose }: NewGameModalProps) {
       const names = [...prev];
       while (names.length < playerCount) names.push('');
       return names.slice(0, playerCount);
+    });
+    setBotSlots((prev) => {
+      const slots = [...prev];
+      while (slots.length < playerCount) slots.push(false);
+      return slots.slice(0, playerCount);
     });
     setRules((r) => ({ ...r, playerCount, deckCount: playerCount + 1 }));
   }, [playerCount]);
@@ -88,9 +94,10 @@ export function NewGameModal({ open, onClose }: NewGameModalProps) {
 
   const resolvedNames = playerNames.map((n, i) => n.trim() || `Player ${i + 1}`);
   const resolvedTeamNames = teamNames.map((n, i) => n.trim() || `Team ${i + 1}`);
+  const effectiveNames = playerNames.map((n, i) => botSlots[i] ? `Bot ${i + 1}` : (n.trim() || `Player ${i + 1}`));
 
   const handleSubmit = async () => {
-    const names = resolvedNames;
+    const names = effectiveNames;
     if (new Set(names.map((n) => n.toLowerCase())).size !== names.length) {
       toast.error('Player names must be unique');
       return;
@@ -101,15 +108,18 @@ export function NewGameModal({ open, onClose }: NewGameModalProps) {
       const res = await fetch('/api/games', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ hostName: names[0], playerNames: names, teamNames: resolvedTeamNames, rules }),
+        body: JSON.stringify({ hostName: names[0], playerNames: names, teamNames: resolvedTeamNames, rules, botSlots }),
       });
       const data = await res.json();
       if (!res.ok) {
         toast.error(data.error || 'Failed to create game');
         return;
       }
-      // Host joins automatically
-      joinGame(data.code, names[0], data.playerTokens[0].sessionToken);
+      // Host (first human player) joins automatically
+      const firstHuman = data.playerTokens.findIndex((t: { isBot: boolean }) => !t.isBot);
+      if (firstHuman >= 0) {
+        joinGame(data.code, data.playerTokens[firstHuman].name, data.playerTokens[firstHuman].sessionToken);
+      }
       navigate(`/game/${data.code}`);
       onClose();
     } catch (e) {
@@ -197,29 +207,43 @@ export function NewGameModal({ open, onClose }: NewGameModalProps) {
               </div>
               <div className="grid grid-cols-2 gap-2">
                 {playerNames.map((name, i) => (
-                  <div key={i} className="relative">
+                  <div key={i} className="relative flex items-center gap-1">
                     <span className={`absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold px-1.5 py-0.5 rounded ${
                       i % 2 === 0 ? 'bg-blue-700 text-blue-100' : 'bg-red-800 text-red-100'
                     }`}>
                       T{(i % 2) + 1}
                     </span>
                     <input
-                      value={name}
+                      value={botSlots[i] ? '' : name}
+                      disabled={botSlots[i]}
                       onChange={(e) => {
                         const names = [...playerNames];
                         names[i] = e.target.value;
                         setPlayerNames(names);
                       }}
-                      placeholder={`Player ${i + 1}`}
-                      className="w-full bg-felt-700 border border-felt-600 rounded-lg pl-10 pr-3 py-2 text-white placeholder-felt-400 focus:outline-none focus:border-gold-500"
+                      placeholder={botSlots[i] ? `Bot ${i + 1}` : `Player ${i + 1}`}
+                      className="w-full bg-felt-700 border border-felt-600 rounded-lg pl-10 pr-10 py-2 text-white placeholder-felt-400 focus:outline-none focus:border-gold-500 disabled:opacity-50"
                     />
+                    <button
+                      type="button"
+                      disabled={i === 0}
+                      onClick={() => {
+                        const slots = [...botSlots];
+                        slots[i] = !slots[i];
+                        setBotSlots(slots);
+                      }}
+                      title={i === 0 ? 'Host must be human' : botSlots[i] ? 'Switch to human' : 'Switch to bot'}
+                      className={`absolute right-2 top-1/2 -translate-y-1/2 text-lg leading-none transition-opacity ${i === 0 ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer hover:scale-110'}`}
+                    >
+                      {botSlots[i] ? '🤖' : '👤'}
+                    </button>
                   </div>
                 ))}
               </div>
               {playerCount > 2 && (
                 <p className="text-xs text-felt-400 mt-2">
-                  {resolvedTeamNames[0]}: {resolvedNames.filter((_, i) => i % 2 === 0).join(', ')} &nbsp;|&nbsp;
-                  {resolvedTeamNames[1]}: {resolvedNames.filter((_, i) => i % 2 === 1).join(', ')}
+                  {resolvedTeamNames[0]}: {effectiveNames.filter((_, i) => i % 2 === 0).join(', ')} &nbsp;|&nbsp;
+                  {resolvedTeamNames[1]}: {effectiveNames.filter((_, i) => i % 2 === 1).join(', ')}
                 </p>
               )}
             </div>

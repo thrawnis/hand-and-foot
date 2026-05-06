@@ -82,6 +82,7 @@ export interface ClientPlayer {
   footCount: number;
   inFoot: boolean;
   isConnected: boolean;
+  isBot?: boolean;
   hand?: Card[];
   foot?: Card[];
 }

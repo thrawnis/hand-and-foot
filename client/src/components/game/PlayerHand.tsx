@@ -114,9 +114,15 @@ export function PlayerHand({ gameState, handOrder, setHandOrder }: PlayerHandPro
       {/* Status bar */}
       <div className="flex items-center justify-between text-sm flex-wrap gap-2">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className={`font-semibold ${isMyTurn ? 'text-gold-400' : 'text-felt-300'}`}>
-            {isMyTurn ? '⭐ Your Turn' : `${gameState.players[gameState.currentPlayerIndex]?.name}'s Turn`}
-          </span>
+          {gameState.players[gameState.currentPlayerIndex]?.isBot && !isMyTurn ? (
+            <span className="font-semibold text-felt-300 animate-pulse">
+              🤖 Bot is thinking...
+            </span>
+          ) : (
+            <span className={`font-semibold ${isMyTurn ? 'text-gold-400' : 'text-felt-300'}`}>
+              {isMyTurn ? '⭐ Your Turn' : `${gameState.players[gameState.currentPlayerIndex]?.name}'s Turn`}
+            </span>
+          )}
           {isMyTurn && (
             <span className={`text-xs px-2 py-0.5 rounded-full ${
               isDrawPhase ? 'bg-blue-700 text-blue-200' : 'bg-green-700 text-green-200'
@@ -145,7 +151,7 @@ export function PlayerHand({ gameState, handOrder, setHandOrder }: PlayerHandPro
       </div>
 
       {/* Action buttons */}
-      {isMyTurn && (
+      {isMyTurn && !gameState.players[gameState.currentPlayerIndex]?.isBot && (
         <div className="flex gap-2 flex-wrap">
           {isDrawPhase ? (
             <>

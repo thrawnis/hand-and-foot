@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { createGame, toLobbyGame, DEFAULT_RULES } from '../services/gameService';
 import { listGames, loadGameByCode } from '../db';
 import { CreateGamePayload, GameState } from '../types';
+import { scheduleNextBotTurn } from '../services/botStrategy';
 
 const router = Router();
 
@@ -63,12 +64,15 @@ router.post('/games', (req: Request, res: Response) => {
   }
 
   const rules = { ...DEFAULT_RULES, ...payload.rules, playerCount: names.length };
-  const state = createGame({ hostName: payload.hostName, rules, playerNames: names });
+  const state = createGame({ hostName: payload.hostName, rules, playerNames: names, teamNames: payload.teamNames, botSlots: payload.botSlots });
+
+  // Kick off bot if the first player is a bot
+  scheduleNextBotTurn(state);
 
   res.status(201).json({
     gameId: state.id,
     code: state.code,
-    playerTokens: state.players.map((p) => ({ name: p.name, sessionToken: p.sessionToken })),
+    playerTokens: state.players.map((p) => ({ name: p.name, sessionToken: p.sessionToken, isBot: p.isBot ?? false })),
   });
 });
 

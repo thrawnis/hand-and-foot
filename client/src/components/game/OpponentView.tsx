@@ -57,7 +57,8 @@ export function OpponentView({ player, playerIndex, gameState, position }: Oppon
         <div className="flex items-center gap-1">
           {isCurrentTurn && <span className="text-gold-400 text-xs animate-pulse">⭐</span>}
           <span className="text-white text-sm font-semibold">{player.name}</span>
-          {!player.isConnected && <span className="text-gray-500 text-xs">(away)</span>}
+          {player.isBot && <span title="Bot player" className="text-base leading-none">🤖</span>}
+          {!player.isConnected && !player.isBot && <span className="text-gray-500 text-xs">(away)</span>}
         </div>
 
         <FootStatusBadge player={player} />
