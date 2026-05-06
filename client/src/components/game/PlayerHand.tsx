@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { SortableContext, horizontalListSortingStrategy } from '@dnd-kit/sortable';
+import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable';
 import { Card, ClientGameState } from '../../types';
 import { CardComponent } from './CardComponent';
 import { useGameStore } from '../../store/gameStore';
@@ -10,38 +10,49 @@ import { discardCard, drawStock, drawDiscard, goOut } from '../../hooks/useSocke
 import { Button } from '../common/Button';
 import toast from 'react-hot-toast';
 
+// Card pixel dimensions for the 'sm' size used in the fan
+const CARD_W = 40;
+const CARD_H = 56;
+const LIFT = 14;   // how far a selected card lifts above the baseline
+const MIN_STEP = 14; // minimum px between card left-edges when heavily overlapped
+const MAX_STEP = CARD_W + 6; // full spacing, no overlap
+
 interface SortableCardProps {
   card: Card;
+  index: number;
+  step: number;
+  totalCards: number;
   selected: boolean;
   onSelect: () => void;
-  isMyTurn: boolean;
-  isDrawPhase: boolean;
 }
 
-function SortableCard({ card, selected, onSelect, isMyTurn, isDrawPhase }: SortableCardProps) {
-  const {
-    attributes, listeners, setNodeRef, transform, transition, isDragging,
-  } = useSortable({
+function SortableCard({ card, index, step, totalCards, selected, onSelect }: SortableCardProps) {
+  const { setNodeRef, transform, isDragging, attributes, listeners } = useSortable({
     id: card.id,
     data: { card, type: 'hand-card' },
   });
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    zIndex: isDragging ? 50 : undefined,
-  };
-
   return (
-    <div ref={setNodeRef} style={style} className="touch-none">
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      style={{
+        position: 'absolute',
+        left: index * step,
+        top: selected ? 0 : LIFT,
+        zIndex: isDragging ? 1000 : selected ? totalCards + 5 : index + 1,
+        transform: CSS.Transform.toString(transform),
+        transition: isDragging ? undefined : 'top 120ms ease',
+        touchAction: 'none',
+      }}
+    >
       <CardComponent
         card={card}
         selected={selected}
         onClick={onSelect}
         isDragging={isDragging}
-        dragRef={undefined}
-        dragListeners={listeners}
-        dragAttributes={attributes}
+        size="sm"
       />
     </div>
   );
@@ -56,6 +67,8 @@ interface PlayerHandProps {
 export function PlayerHand({ gameState, handOrder, setHandOrder }: PlayerHandProps) {
   const { selectedCardIds, toggleCardSelection, clearSelection } = useGameStore();
   const [showGoOutConfirm, setShowGoOutConfirm] = useState(false);
+  const [containerWidth, setContainerWidth] = useState(360);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const myIndex = gameState.myPlayerIndex;
   const me = myIndex >= 0 ? gameState.players[myIndex] : null;
@@ -65,6 +78,15 @@ export function PlayerHand({ gameState, handOrder, setHandOrder }: PlayerHandPro
   const isDrawPhase = gameState.turnPhase === 'draw';
   const myCards = me.hand ?? [];
   const isInFoot = me.inFoot;
+
+  // Track container width for fan step calculation
+  useEffect(() => {
+    if (!containerRef.current) return;
+    setContainerWidth(containerRef.current.offsetWidth);
+    const ro = new ResizeObserver(([entry]) => setContainerWidth(entry.contentRect.width));
+    ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, []);
 
   // Keep handOrder in sync with actual cards
   useEffect(() => {
@@ -78,9 +100,13 @@ export function PlayerHand({ gameState, handOrder, setHandOrder }: PlayerHandPro
 
   // Render cards in user's preferred order
   const idToCard = new Map(myCards.map((c) => [c.id, c]));
-  const sortedCards = handOrder
-    .map((id) => idToCard.get(id))
-    .filter(Boolean) as Card[];
+  const sortedCards = handOrder.map((id) => idToCard.get(id)).filter(Boolean) as Card[];
+
+  // Fan layout: spread cards across the full container width with overlap when needed
+  const n = sortedCards.length;
+  const step = n <= 1 ? 0 : Math.max(MIN_STEP, Math.min(MAX_STEP, (containerWidth - CARD_W) / (n - 1)));
+  const fanWidth = n <= 1 ? CARD_W : step * (n - 1) + CARD_W;
+  const fanHeight = CARD_H + LIFT + 4;
 
   const topDiscard = gameState.discardPile[gameState.discardPile.length - 1];
   const canDrawDiscard =
@@ -177,36 +203,36 @@ export function PlayerHand({ gameState, handOrder, setHandOrder }: PlayerHandPro
         </div>
       )}
 
-      {/* Sortable hand */}
-      <div className="overflow-x-auto pb-2">
-        <SortableContext items={handOrder} strategy={horizontalListSortingStrategy}>
-          <div className="flex gap-1 min-w-max px-1 items-end">
-            {sortedCards.map((card) => (
-              <SortableCard
-                key={card.id}
-                card={card}
-                selected={selectedCardIds.includes(card.id)}
-                onSelect={() => toggleCardSelection(card.id)}
-                isMyTurn={isMyTurn}
-                isDrawPhase={isDrawPhase}
-              />
-            ))}
-            {myCards.length === 0 && !isInFoot && (
-              <p className="text-felt-400 text-sm py-4">No cards in hand</p>
-            )}
-            {myCards.length === 0 && isInFoot && (
-              <p className="text-green-400 text-sm py-4 font-semibold">
-                All foot cards played!
-              </p>
-            )}
+      {/* Fan hand layout — all cards visible without scrolling */}
+      <div ref={containerRef} className="w-full">
+        {myCards.length === 0 ? (
+          <div className="py-4 text-center">
+            {isInFoot
+              ? <p className="text-green-400 text-sm font-semibold">All foot cards played!</p>
+              : <p className="text-felt-400 text-sm">No cards in hand</p>
+            }
           </div>
-        </SortableContext>
+        ) : (
+          <SortableContext items={handOrder} strategy={rectSortingStrategy}>
+            {/* outer div scrolls only as a last resort for very large hands */}
+            <div className="overflow-x-auto">
+              <div className="relative" style={{ width: Math.max(fanWidth, containerWidth), height: fanHeight }}>
+                {sortedCards.map((card, i) => (
+                  <SortableCard
+                    key={card.id}
+                    card={card}
+                    index={i}
+                    step={step}
+                    totalCards={n}
+                    selected={selectedCardIds.includes(card.id)}
+                    onSelect={() => toggleCardSelection(card.id)}
+                  />
+                ))}
+              </div>
+            </div>
+          </SortableContext>
+        )}
       </div>
-
-      {/* Drag hint */}
-      {isMyTurn && !isDrawPhase && myCards.length > 1 && (
-        <p className="text-felt-600 text-xs text-center">Drag cards to reorder your hand</p>
-      )}
 
       {/* Go out confirmation */}
       <AnimatePresence>

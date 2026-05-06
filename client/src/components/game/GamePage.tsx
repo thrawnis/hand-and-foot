@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { DndContext, DragEndEvent, DragOverlay, DragStartEvent } from '@dnd-kit/core';
+import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, MouseSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGameStore } from '../../store/gameStore';
@@ -27,6 +27,11 @@ export function GamePage() {
   const [joinModal, setJoinModal] = useState<LobbyGame | null>(null);
   const [loading, setLoading] = useState(true);
   const [handOrder, setHandOrder] = useState<string[]>([]);
+
+  const sensors = useSensors(
+    useSensor(MouseSensor),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
+  );
 
   useEffect(() => {
     if (!code) return;
@@ -145,7 +150,7 @@ export function GamePage() {
   const undoRequesterName = undoRequest ? gameState.players[undoRequest.requestedByIndex]?.name : '';
 
   return (
-    <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+    <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="h-screen bg-felt-texture flex flex-col overflow-hidden">
         {/* Header */}
         <header className="bg-felt-900/80 backdrop-blur border-b border-felt-700 px-4 py-2 flex items-center justify-between z-20 shrink-0">
