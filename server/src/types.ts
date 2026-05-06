@@ -31,6 +31,7 @@ export interface Player {
   isConnected: boolean;
   socketId?: string;
   sessionToken: string;
+  isBot?: boolean;
 }
 
 export interface Team {
@@ -117,6 +118,7 @@ export interface ClientPlayer {
   footCount: number;
   inFoot: boolean;
   isConnected: boolean;
+  isBot?: boolean;
   hand?: Card[];
   foot?: Card[];
 }
@@ -200,6 +202,7 @@ export interface CreateGamePayload {
   rules: GameRules;
   playerNames: string[];
   teamNames?: string[];
+  botSlots?: boolean[];
 }
 
 export interface SecondTabPrompt {

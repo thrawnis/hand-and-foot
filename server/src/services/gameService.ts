@@ -98,7 +98,7 @@ function snapshotState(state: GameState): Omit<GameState, 'lastTurnSnapshot' | '
 }
 
 export function createGame(payload: CreateGamePayload): GameState {
-  const { hostName, rules, playerNames, teamNames } = payload;
+  const { hostName, rules, playerNames, teamNames, botSlots } = payload;
   const deckCount = rules.playerCount + 1;
   const fullRules = { ...DEFAULT_RULES, ...rules, deckCount };
 
@@ -116,8 +116,9 @@ export function createGame(payload: CreateGamePayload): GameState {
       hand: sortHand(hand),
       foot: sortHand(foot),
       inFoot: false,
-      isConnected: false,
+      isConnected: botSlots?.[i] === true,
       sessionToken: uuidv4(),
+      isBot: botSlots?.[i] === true,
     };
   });
 
@@ -182,6 +183,7 @@ export function toClientState(state: GameState, playerIndex: number): ClientGame
       footCount: p.foot.length,
       inFoot: p.inFoot,
       isConnected: p.isConnected,
+      isBot: p.isBot,
       hand: isMe ? p.hand : undefined,
       foot: isMe ? (p.inFoot ? p.foot : undefined) : undefined,
     };

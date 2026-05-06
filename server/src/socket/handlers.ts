@@ -7,6 +7,7 @@ import {
   toClientState, toLobbyGame, drawFromStock, drawFromDiscard,
   playCards, closeBook, discardCard, goOut, requestUndo, respondUndo,
 } from '../services/gameService';
+import { setBroadcast, scheduleNextBotTurn, autoBotUndoApproval } from '../services/botStrategy';
 import { loadGameByCode, saveGame, listGames } from '../db';
 
 // Track: socketId -> { gameCode, playerIndex }
@@ -33,6 +34,8 @@ function broadcastLobby(io: Server): void {
 }
 
 export function registerSocketHandlers(io: Server): void {
+  setBroadcast((state: GameState) => broadcastGame(io, state));
+
   io.on('connection', (socket: Socket) => {
 
     socket.on('lobby:subscribe', () => {
@@ -190,6 +193,7 @@ export function registerSocketHandlers(io: Server): void {
       const result = discardCard(state, info.playerIndex, payload);
       if (!result.ok) { socket.emit('game:error', { message: result.error }); return; }
       broadcastGame(io, state);
+      scheduleNextBotTurn(state);
       broadcastLobby(io);
     });
 
@@ -202,6 +206,7 @@ export function registerSocketHandlers(io: Server): void {
       const result = goOut(state, info.playerIndex);
       if (!result.ok) { socket.emit('game:error', { message: result.error }); return; }
       broadcastGame(io, state);
+      scheduleNextBotTurn(state);
       broadcastLobby(io);
     });
 
@@ -213,6 +218,8 @@ export function registerSocketHandlers(io: Server): void {
 
       const result = requestUndo(state, info.playerIndex);
       if (!result.ok) { socket.emit('game:error', { message: result.error }); return; }
+      broadcastGame(io, state);
+      autoBotUndoApproval(state);
       broadcastGame(io, state);
     });
 

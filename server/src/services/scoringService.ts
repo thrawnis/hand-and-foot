@@ -77,17 +77,11 @@ export function cumulativeScores(roundScores: RoundScore[][]): number[] {
 
 export function canTeamOpen(team: Team, cardIds: string[], state: GameState): { canOpen: boolean; points: number } {
   const threshold = state.rules.roundThresholds[state.currentRound - 1] ?? 50;
-
-  // Find the cards being played
-  const currentPlayer = state.players.find((p) => p.teamIndex === team.index);
-  if (!currentPlayer) return { canOpen: false, points: 0 };
-
+  const currentPlayer = state.players[state.currentPlayerIndex];
+  if (!currentPlayer || currentPlayer.teamIndex !== team.index) return { canOpen: false, points: 0 };
   const allPlayerCards = [...currentPlayer.hand, ...currentPlayer.foot];
   const playedCards = allPlayerCards.filter((c) => cardIds.includes(c.id));
-
-  // Points = sum of natural card values only (wilds don't count toward threshold)
   const points = playedCards.filter((c) => !c.isWild).reduce((s, c) => s + c.pointValue, 0);
-
   return { canOpen: points >= threshold, points };
 }
 
