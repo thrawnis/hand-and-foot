@@ -16,5 +16,5 @@ docker compose build
 echo "Starting container (auto-pull + rebuild will run inside)..."
 docker compose up -d
 
-echo "Done. Tailing logs (Ctrl+C to stop tailing)..."
-docker compose logs -f
+echo "Done. Tailing logs for 10 seconds (Ctrl+C to stop early)..."
+timeout 10 docker compose logs -f || true
