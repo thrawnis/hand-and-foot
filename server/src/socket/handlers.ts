@@ -63,30 +63,38 @@ export function registerSocketHandlers(io: Server): void {
         return;
       }
 
-      // Find player by name
-      const playerIndex = state.players.findIndex(
-        (p) => p.name.toLowerCase() === payload.playerName.toLowerCase()
-      );
-      if (playerIndex === -1) {
-        socket.emit('game:error', { message: 'Player name not found in this game' });
-        return;
+      // Find player by name, or by session token when reconnecting from a stored session
+      let playerIndex: number;
+      if (payload.playerName) {
+        playerIndex = state.players.findIndex(
+          (p) => p.name.toLowerCase() === payload.playerName.toLowerCase()
+        );
+        if (playerIndex === -1) {
+          socket.emit('game:error', { message: 'Player name not found in this game' });
+          return;
+        }
+      } else {
+        playerIndex = state.players.findIndex((p) => p.sessionToken === payload.sessionToken);
+        if (playerIndex === -1) {
+          socket.emit('game:error', { message: 'Session expired — please re-enter your name' });
+          return;
+        }
       }
 
       const player = state.players[playerIndex];
 
       // Check if already connected from another socket
       if (player.isConnected && player.socketId && player.socketId !== socket.id) {
-        // Prompt the new connection about the conflict
         socket.emit('game:second-tab', {
           gameCode: payload.gameCode,
-          playerName: payload.playerName,
+          playerName: player.name,
           existingSocketId: player.socketId,
         });
         return;
       }
 
-      // Validate session token if provided
-      if (payload.sessionToken && payload.sessionToken !== player.sessionToken) {
+      // Validate session token for name-based joins (token-based joins already matched by token)
+      if (payload.playerName && payload.sessionToken && payload.sessionToken !== player.sessionToken) {
         socket.emit('game:error', { message: 'Invalid session token' });
         return;
       }
