@@ -6,20 +6,22 @@ if ! git pull --ff-only 2>&1; then
   echo "==> Warning: git pull failed — starting with existing code"
 fi
 
-# Build steps require devDependencies (tsc, vite) regardless of NODE_ENV.
-# Use --include=dev to override the production environment variable.
+# NODE_ENV=production (from docker-compose) tells npm to skip devDependencies.
+# Override it per-command for install/build steps so tsc and vite are available.
 
 echo "==> Installing client dependencies..."
-npm install --prefix /app/client --include=dev --silent
+cd /app/client
+NODE_ENV=development npm install --silent
 
 echo "==> Building client..."
-npm run build --prefix /app/client
+npm run build
 
 echo "==> Installing server dependencies..."
-npm install --prefix /app/server --include=dev --silent
+cd /app/server
+NODE_ENV=development npm install --silent
 
 echo "==> Building server..."
-npm run build --prefix /app/server
+npm run build
 
 echo "==> Starting server..."
 exec node /app/server/dist/index.js
