@@ -43,9 +43,10 @@ registerSocketHandlers(io);
 // Initialize DB
 getDb();
 
-// Archive completed games older than 7 days (run on startup + every hour)
+// Archive games with no activity for 5 days (run on startup + every hour)
 function runMaintenance(): void {
-  archiveOldGames(7 * 24 * 60 * 60 * 1000);
+  const archived = archiveOldGames(5 * 24 * 60 * 60 * 1000);
+  if (archived > 0) console.log(`Maintenance: archived ${archived} inactive game(s)`);
 }
 runMaintenance();
 setInterval(runMaintenance, 60 * 60 * 1000);

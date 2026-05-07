@@ -97,12 +97,13 @@ export function deleteGame(id: string): void {
   db.prepare('DELETE FROM games WHERE id = ?').run(id);
 }
 
-export function archiveOldGames(olderThanMs: number): void {
+export function archiveOldGames(olderThanMs: number): number {
   const db = getDb();
   const cutoff = Date.now() - olderThanMs;
-  db.prepare(
-    "UPDATE games SET status = 'archived' WHERE status = 'completed' AND last_action_at < ?"
+  const result = db.prepare(
+    "UPDATE games SET status = 'archived' WHERE status != 'archived' AND last_action_at < ?"
   ).run(cutoff);
+  return result.changes;
 }
 
 export function savePreset(preset: RulePreset): void {
