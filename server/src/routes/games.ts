@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { createGame, toLobbyGame, DEFAULT_RULES } from '../services/gameService';
-import { listGames, loadGameByCode } from '../db';
+import { listGames, loadGameByCode, listPresets } from '../db';
 import { CreateGamePayload, GameState } from '../types';
 import { scheduleNextBotTurn } from '../services/botStrategy';
 
@@ -78,6 +78,10 @@ router.post('/games', (req: Request, res: Response) => {
 
 router.get('/defaults', (_req: Request, res: Response) => {
   res.json(DEFAULT_RULES);
+});
+
+router.get('/presets', (_req: Request, res: Response) => {
+  res.json(listPresets());
 });
 
 export default router;

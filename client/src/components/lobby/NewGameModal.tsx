@@ -52,6 +52,7 @@ export function NewGameModal({ open, onClose }: NewGameModalProps) {
   const [botSlots, setBotSlots] = useState<boolean[]>([false, false, false, false]);
   const [rules, setRules] = useState<GameRules>({ ...DEFAULT_RULES });
   const [presets, setPresets] = useState<RulePreset[]>([]);
+  const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -75,16 +76,13 @@ export function NewGameModal({ open, onClose }: NewGameModalProps) {
     setRules((r) => ({ ...r, playerCount, deckCount: playerCount + 1 }));
   }, [playerCount]);
 
-  // Load presets from admin API (public endpoint)
+  // Load presets (public endpoint — no auth required)
   useEffect(() => {
     if (open) {
-      const token = localStorage.getItem('hf_admin_token');
-      if (token) {
-        fetch('/api/admin/presets', { headers: { 'x-admin-token': token } })
-          .then((r) => r.ok ? r.json() : [])
-          .then(setPresets)
-          .catch(() => {});
-      }
+      fetch('/api/presets')
+        .then((r) => r.ok ? r.json() : [])
+        .then(setPresets)
+        .catch(() => {});
     }
   }, [open]);
 
@@ -131,7 +129,7 @@ export function NewGameModal({ open, onClose }: NewGameModalProps) {
 
   const applyPreset = (preset: RulePreset) => {
     setRules({ ...preset.rules, playerCount, deckCount: playerCount + 1 });
-    toast.success(`Applied preset: ${preset.name}`);
+    setSelectedPresetId(preset.id);
   };
 
   return (
@@ -264,28 +262,40 @@ export function NewGameModal({ open, onClose }: NewGameModalProps) {
             exit={{ opacity: 0, x: -20 }}
             className="space-y-4"
           >
-            {presets.length > 0 && (
-              <div>
-                <label className="block text-sm font-medium text-felt-200 mb-2">Load Preset</label>
-                <div className="flex flex-wrap gap-2">
-                  {presets.map((p) => (
+            <div>
+              <label className="block text-sm font-medium text-felt-200 mb-2">Preset</label>
+              <div className="flex flex-wrap gap-2">
+                {presets.length === 0 && (
+                  <span className="text-felt-500 text-sm">No presets saved — using defaults</span>
+                )}
+                {presets.map((p) => {
+                  const active = selectedPresetId === p.id;
+                  return (
                     <button
                       key={p.id}
                       onClick={() => applyPreset(p)}
-                      className="px-3 py-1.5 bg-felt-700 border border-felt-600 rounded-lg text-sm text-felt-200 hover:border-gold-500 hover:text-gold-300 transition-colors"
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                        active
+                          ? 'bg-gold-500/20 border-gold-500 text-gold-300'
+                          : 'bg-felt-700 border-felt-600 text-felt-200 hover:border-gold-500 hover:text-gold-300'
+                      }`}
                     >
-                      {p.name}
+                      {active && <span className="mr-1">✓</span>}{p.name}
                     </button>
-                  ))}
-                  <button
-                    onClick={() => setRules({ ...DEFAULT_RULES, playerCount, deckCount: playerCount + 1 })}
-                    className="px-3 py-1.5 bg-felt-700 border border-felt-600 rounded-lg text-sm text-felt-400 hover:border-felt-400 transition-colors"
-                  >
-                    Reset Defaults
-                  </button>
-                </div>
+                  );
+                })}
+                <button
+                  onClick={() => { setRules({ ...DEFAULT_RULES, playerCount, deckCount: playerCount + 1 }); setSelectedPresetId(null); }}
+                  className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+                    selectedPresetId === null
+                      ? 'bg-felt-600 border-felt-500 text-felt-200'
+                      : 'bg-felt-700 border-felt-600 text-felt-400 hover:border-felt-400'
+                  }`}
+                >
+                  {selectedPresetId === null && <span className="mr-1">✓</span>}Defaults
+                </button>
               </div>
-            )}
+            </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-64 overflow-y-auto pr-1">
               {RULE_FIELDS.map(({ key, label, type, description }) => (
@@ -301,6 +311,7 @@ export function NewGameModal({ open, onClose }: NewGameModalProps) {
                       onChange={(e) => {
                         const vals = e.target.value.split(',').map((v) => parseInt(v.trim())).filter((v) => !isNaN(v));
                         setRules((r) => ({ ...r, [key]: vals }));
+                        setSelectedPresetId(null);
                       }}
                       className="w-full bg-felt-700 border border-felt-600 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-gold-500"
                     />
@@ -308,7 +319,7 @@ export function NewGameModal({ open, onClose }: NewGameModalProps) {
                     <input
                       type="number"
                       value={rules[key] as number}
-                      onChange={(e) => setRules((r) => ({ ...r, [key]: parseInt(e.target.value) || 0 }))}
+                      onChange={(e) => { setRules((r) => ({ ...r, [key]: parseInt(e.target.value) || 0 })); setSelectedPresetId(null); }}
                       className="w-full bg-felt-700 border border-felt-600 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-gold-500"
                     />
                   )}
