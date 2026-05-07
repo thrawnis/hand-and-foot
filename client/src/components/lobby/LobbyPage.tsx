@@ -110,7 +110,7 @@ export function LobbyPage() {
               <p className="text-felt-400 text-sm mt-1">Start one and invite your friends!</p>
             </div>
           ) : (
-            <div className="grid gap-3">
+            <div className="grid gap-3 md:grid-cols-2">
               <AnimatePresence>
                 {activeGames.map((game) => (
                   <GameCard
@@ -128,7 +128,7 @@ export function LobbyPage() {
         {archivedGames.length > 0 && (
           <section>
             <h2 className="text-xl font-bold text-felt-400 mb-4">Past Games</h2>
-            <div className="grid gap-3 opacity-60">
+            <div className="grid gap-3 md:grid-cols-2 opacity-60">
               {archivedGames.map((game) => (
                 <GameCard
                   key={game.id}
