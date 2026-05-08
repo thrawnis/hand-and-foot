@@ -536,13 +536,19 @@ export function goOut(state: GameState, playerIndex: number): { ok: boolean; err
 
   log(state, player.name, `Went out! Round ${state.currentRound} complete.`);
 
-  if (state.currentRound >= state.rules.numRounds) {
-    // Game over
-    const totals = cumulativeScores(state.roundScores);
-    const maxScore = Math.max(...totals);
+  const totals = cumulativeScores(state.roundScores);
+  const maxScore = Math.max(...totals);
+
+  const winByScore = state.rules.winningScore !== undefined && maxScore >= state.rules.winningScore;
+  const winByRounds = state.currentRound >= state.rules.numRounds;
+
+  if (winByScore || winByRounds) {
     state.winnerTeamIndex = totals.indexOf(maxScore);
     state.status = 'completed';
-    log(state, 'System', `Game over! Team ${state.winnerTeamIndex + 1} wins with ${maxScore} points.`);
+    const reason = winByScore
+      ? `reached ${maxScore} points (target: ${state.rules.winningScore})`
+      : `${maxScore} points after ${state.rules.numRounds} rounds`;
+    log(state, 'System', `Game over! Team ${state.winnerTeamIndex + 1} wins — ${reason}.`);
   } else {
     // Start next round
     startNextRound(state);

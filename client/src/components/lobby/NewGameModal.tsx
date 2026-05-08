@@ -333,7 +333,7 @@ export function NewGameModal({ open, onClose }: NewGameModalProps) {
                   type="number"
                   value={rules.winningScore ?? ''}
                   placeholder="No limit"
-                  onChange={(e) => setRules((r) => ({ ...r, winningScore: e.target.value ? parseInt(e.target.value) : undefined }))}
+                  onChange={(e) => { setRules((r) => ({ ...r, winningScore: e.target.value ? parseInt(e.target.value) : undefined })); setSelectedPresetId(null); }}
                   className="w-full bg-felt-700 border border-felt-600 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-gold-500"
                 />
               </div>
@@ -378,6 +378,8 @@ export function NewGameModal({ open, onClose }: NewGameModalProps) {
                 <span className="text-felt-300">Min book size</span><span className="text-white">{rules.minCardsPerBook}</span>
                 <span className="text-felt-300">Go out requires</span><span className="text-white">{rules.minCleanBooksToGoOut} clean + {rules.minDirtyBooksToGoOut} dirty</span>
                 <span className="text-felt-300">Thresholds</span><span className="text-white">{rules.roundThresholds.join(', ')}</span>
+                <span className="text-felt-300">Win at</span>
+                <span className="text-white">{rules.winningScore ? `${rules.winningScore} pts` : 'After all rounds'}</span>
               </div>
             </div>
 
