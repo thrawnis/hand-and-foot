@@ -61,27 +61,21 @@ export function useSocket() {
     };
 
     const onConnect = () => {
-      // Attempt reconnection from stored session
       const stored = localStorage.getItem('hf_session');
-      if (stored) {
-        try {
-          const session = JSON.parse(stored);
-          // Re-fetch game info to check if still active
-          fetch(`/api/games/${session.gameCode}`)
-            .then((r) => r.json())
-            .then((game) => {
-              if (game.status === 'active' || game.status === 'waiting') {
-                // Rejoin; user will need to pick their name via the UI
-                // Store game code for the lobby to show "rejoin" prompt
-                localStorage.setItem('hf_pending_rejoin', JSON.stringify(session));
-              } else {
-                localStorage.removeItem('hf_session');
-              }
-            })
-            .catch(() => localStorage.removeItem('hf_session'));
-        } catch {
-          localStorage.removeItem('hf_session');
-        }
+      if (!stored) return;
+      try {
+        const session = JSON.parse(stored);
+        // Always attempt to rejoin on connect/reconnect using the stored token.
+        // The server will look up by token so no player name is needed.
+        // Also keep hf_pending_rejoin so the lobby can show a "Rejoin" banner.
+        getSocket().emit('game:join', {
+          gameCode: session.gameCode,
+          playerName: '',
+          sessionToken: session.sessionToken,
+        });
+        localStorage.setItem('hf_pending_rejoin', JSON.stringify(session));
+      } catch {
+        localStorage.removeItem('hf_session');
       }
     };
 
