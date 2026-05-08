@@ -107,14 +107,8 @@ export function CardComponent({
       whileHover={!disabled && !selected ? { y: -4 } : {}}
       whileTap={!disabled ? { scale: 0.95 } : {}}
     >
-      {/* Top-left */}
-      <div className={`absolute top-1 left-1.5 flex flex-col items-center gap-1 leading-none ${textColor}`}>
-        <span className={`font-bold leading-none ${sizes[size].rank}`}>{rankDisplay(card.rank)}</span>
-        <span className={`leading-none ${sizes[size].suit}`}>{suitSymbol(card.suit)}</span>
-      </div>
-
-      {/* Bottom-right (inverted) */}
-      <div className={`absolute bottom-1 right-1.5 flex flex-col items-center gap-1 leading-none rotate-180 ${textColor}`}>
+      {/* Centered rank + suit */}
+      <div className={`absolute inset-0 flex flex-col items-center justify-center gap-1 leading-none ${textColor}`}>
         <span className={`font-bold leading-none ${sizes[size].rank}`}>{rankDisplay(card.rank)}</span>
         <span className={`leading-none ${sizes[size].suit}`}>{suitSymbol(card.suit)}</span>
       </div>
