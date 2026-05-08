@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSortable } from '@dnd-kit/sortable';
+import { useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable';
 import { Card, ClientGameState } from '../../types';
@@ -16,6 +17,23 @@ const CARD_H = 56;
 const LIFT = 14;
 const MIN_STEP = 14;
 const MAX_STEP = CARD_W + 6;
+
+// Ghost drop-target rendered as a dotted card outline after the last card
+function GhostDropTarget({ groupId, left }: { groupId: string; left: number }) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `new-group-slot-${groupId}`,
+    data: { type: 'new-group-slot' },
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ position: 'absolute', left, top: LIFT, width: CARD_W, height: CARD_H }}
+      className={`rounded-lg border-2 border-dashed transition-colors duration-150 ${
+        isOver ? 'border-gold-400 bg-gold-500/10' : 'border-felt-600/40'
+      }`}
+    />
+  );
+}
 
 interface SortableCardProps {
   card: Card;
@@ -49,13 +67,7 @@ function SortableCard({ card, index, step, totalCards, selected, isNew, onSelect
         touchAction: 'none',
       }}
     >
-      <CardComponent
-        card={card}
-        selected={selected}
-        onClick={onSelect}
-        isDragging={isDragging}
-        size="sm"
-      />
+      <CardComponent card={card} selected={selected} onClick={onSelect} isDragging={isDragging} size="sm" />
     </div>
   );
 }
@@ -66,111 +78,79 @@ interface GroupRowProps {
   containerWidth: number;
   selectedCardIds: string[];
   newCardIds: Set<string>;
-  hasOtherSelected: boolean; // selected cards NOT all in this group
+  hasOtherSelected: boolean;
+  isUngrouped: boolean;
   onSelect: (id: string) => void;
   onMoveHere: () => void;
   onRemove: () => void;
-  onRename: (name: string) => void;
 }
 
 function GroupRow({
   group, idToCard, containerWidth, selectedCardIds, newCardIds,
-  hasOtherSelected, onSelect, onMoveHere, onRemove, onRename,
+  hasOtherSelected, isUngrouped, onSelect, onMoveHere, onRemove,
 }: GroupRowProps) {
-  const [editing, setEditing] = useState(false);
-  const [editName, setEditName] = useState(group.name);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const isUngrouped = group.id === UNGROUPED_ID;
-
   const cards = group.cardIds.map(id => idToCard.get(id)).filter(Boolean) as Card[];
   const n = cards.length;
-  const step = n <= 1 ? 0 : Math.max(MIN_STEP, Math.min(MAX_STEP, (containerWidth - CARD_W) / (n - 1)));
-  const fanWidth = n <= 1 ? CARD_W : step * (n - 1) + CARD_W;
+  const effectiveStep = n <= 1 ? MAX_STEP : Math.max(MIN_STEP, Math.min(MAX_STEP, (containerWidth - CARD_W) / (n - 1)));
+  const ghostLeft = n === 0 ? 0 : n * effectiveStep;
+  const fanWidth = ghostLeft + CARD_W + 4; // include ghost card
   const fanHeight = CARD_H + LIFT + 4;
-
-  const startEdit = () => {
-    setEditName(group.name);
-    setEditing(true);
-    setTimeout(() => inputRef.current?.focus(), 0);
-  };
-
-  const commitEdit = () => {
-    setEditing(false);
-    onRename(editName.trim() || group.name);
-  };
 
   return (
     <div>
-      {/* Group header */}
-      <div className="flex items-center gap-1.5 px-1 mb-1 min-h-[20px]">
-        {isUngrouped ? (
-          <span className="text-xs text-felt-600 select-none">Ungrouped</span>
-        ) : editing ? (
-          <input
-            ref={inputRef}
-            value={editName}
-            onChange={e => setEditName(e.target.value)}
-            onBlur={commitEdit}
-            onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') setEditing(false); }}
-            className="text-xs bg-felt-700 border border-gold-500 rounded px-1.5 py-0.5 text-white w-28 focus:outline-none"
-          />
-        ) : (
+      {/* Separator + controls for named groups */}
+      {!isUngrouped && (
+        <div className="flex items-center gap-2 px-1 mb-1">
+          <div className="flex-1 h-px bg-felt-700" />
+          {hasOtherSelected && (
+            <button
+              onClick={onMoveHere}
+              className="text-xs px-1.5 py-0.5 rounded border border-felt-600 text-felt-400 hover:border-gold-500 hover:text-gold-400 transition-colors"
+            >
+              ← here
+            </button>
+          )}
           <button
-            onClick={startEdit}
-            title="Click to rename"
-            className="text-xs font-medium text-felt-300 hover:text-white transition-colors"
+            onClick={onRemove}
+            title="Remove group (cards return to ungrouped)"
+            className="text-felt-600 hover:text-red-400 transition-colors text-sm leading-none"
           >
-            {group.name || 'Unnamed'}
+            ×
           </button>
-        )}
+        </div>
+      )}
 
-        {/* Move selected here */}
-        {hasOtherSelected && (
+      {/* Move-here for ungrouped when some selected cards are in other groups */}
+      {isUngrouped && hasOtherSelected && (
+        <div className="flex justify-end px-1 mb-1">
           <button
             onClick={onMoveHere}
             className="text-xs px-1.5 py-0.5 rounded border border-felt-600 text-felt-400 hover:border-gold-500 hover:text-gold-400 transition-colors"
           >
-            ← here
+            ← ungrouped
           </button>
-        )}
-
-        {/* Remove group (not for ungrouped) */}
-        {!isUngrouped && (
-          <button
-            onClick={onRemove}
-            title="Remove group (cards return to ungrouped)"
-            className="ml-auto text-felt-600 hover:text-red-400 transition-colors text-sm leading-none px-1"
-          >
-            ×
-          </button>
-        )}
-      </div>
-
-      {/* Cards */}
-      {n === 0 ? (
-        <div className="h-10 border border-dashed border-felt-700 rounded-lg flex items-center justify-center text-felt-600 text-xs">
-          {isUngrouped ? 'All cards are in groups' : 'Empty'}
         </div>
-      ) : (
-        <SortableContext items={group.cardIds} strategy={rectSortingStrategy}>
-          <div className="overflow-x-auto">
-            <div className="relative" style={{ width: Math.max(fanWidth, containerWidth), height: fanHeight }}>
-              {cards.map((card, i) => (
-                <SortableCard
-                  key={card.id}
-                  card={card}
-                  index={i}
-                  step={step}
-                  totalCards={n}
-                  selected={selectedCardIds.includes(card.id)}
-                  isNew={newCardIds.has(card.id)}
-                  onSelect={() => onSelect(card.id)}
-                />
-              ))}
-            </div>
-          </div>
-        </SortableContext>
       )}
+
+      <SortableContext items={group.cardIds} strategy={rectSortingStrategy}>
+        <div className="overflow-x-auto">
+          <div className="relative" style={{ width: Math.max(fanWidth, containerWidth), height: fanHeight }}>
+            {cards.map((card, i) => (
+              <SortableCard
+                key={card.id}
+                card={card}
+                index={i}
+                step={effectiveStep}
+                totalCards={n}
+                selected={selectedCardIds.includes(card.id)}
+                isNew={newCardIds.has(card.id)}
+                onSelect={() => onSelect(card.id)}
+              />
+            ))}
+            <GhostDropTarget groupId={group.id} left={ghostLeft} />
+          </div>
+        </div>
+      </SortableContext>
     </div>
   );
 }
@@ -181,10 +161,9 @@ interface PlayerHandProps {
   onMoveToGroup: (cardIds: string[], groupId: string) => void;
   onAddGroup: () => void;
   onRemoveGroup: (groupId: string) => void;
-  onRenameGroup: (groupId: string, name: string) => void;
 }
 
-export function PlayerHand({ gameState, groups, onMoveToGroup, onAddGroup, onRemoveGroup, onRenameGroup }: PlayerHandProps) {
+export function PlayerHand({ gameState, groups, onMoveToGroup, onAddGroup, onRemoveGroup }: PlayerHandProps) {
   const { selectedCardIds, toggleCardSelection, clearSelection } = useGameStore();
   const [showGoOutConfirm, setShowGoOutConfirm] = useState(false);
   const [containerWidth, setContainerWidth] = useState(360);
@@ -200,10 +179,8 @@ export function PlayerHand({ gameState, groups, onMoveToGroup, onAddGroup, onRem
   const isDrawPhase = gameState.turnPhase === 'draw';
   const myCards = me.hand ?? [];
   const isInFoot = me.inFoot;
-
   const idToCard = new Map(myCards.map(c => [c.id, c]));
 
-  // Track container width
   useEffect(() => {
     if (!containerRef.current) return;
     setContainerWidth(containerRef.current.offsetWidth);
@@ -212,11 +189,9 @@ export function PlayerHand({ gameState, groups, onMoveToGroup, onAddGroup, onRem
     return () => ro.disconnect();
   }, []);
 
-  // Detect newly drawn cards; clear glow on action or turn change
   useEffect(() => {
     const prev = prevRef.current;
     const cardIds = new Set(myCards.map(c => c.id));
-
     if (isMyTurn) {
       if (prev.phase === 'draw' && gameState.turnPhase === 'play') {
         const added = [...cardIds].filter(id => !prev.cardIds.has(id));
@@ -227,16 +202,12 @@ export function PlayerHand({ gameState, groups, onMoveToGroup, onAddGroup, onRem
     } else if (prev.myTurn) {
       setNewCardIds(new Set());
     }
-
     prevRef.current = { phase: gameState.turnPhase, myTurn: isMyTurn, cardIds };
   }, [gameState.turnPhase, gameState.currentPlayerIndex, myCards.length]);
 
   const topDiscard = gameState.discardPile[gameState.discardPile.length - 1];
   const canDrawDiscard =
-    topDiscard &&
-    !topDiscard.isWild &&
-    !topDiscard.isRed3 &&
-    !topDiscard.isBlack3 &&
+    topDiscard && !topDiscard.isWild && !topDiscard.isRed3 && !topDiscard.isBlack3 &&
     myCards.filter(c => c.rank === topDiscard.rank && !c.isWild).length >= 2;
 
   const handleDiscard = () => {
@@ -256,11 +227,8 @@ export function PlayerHand({ gameState, groups, onMoveToGroup, onAddGroup, onRem
     clearSelection();
   };
 
-  const selectedPoints = myCards
-    .filter(c => selectedCardIds.includes(c.id))
-    .reduce((s, c) => s + c.pointValue, 0);
+  const selectedPoints = myCards.filter(c => selectedCardIds.includes(c.id)).reduce((s, c) => s + c.pointValue, 0);
 
-  // Determine if selected cards include any not in a given group
   const hasSelectedOutside = (groupId: string) =>
     selectedCardIds.length > 0 &&
     !selectedCardIds.every(id => groups.find(g => g.id === groupId)?.cardIds.includes(id));
@@ -278,27 +246,16 @@ export function PlayerHand({ gameState, groups, onMoveToGroup, onAddGroup, onRem
             </span>
           )}
           {isMyTurn && (
-            <span className={`text-xs px-2 py-0.5 rounded-full ${
-              isDrawPhase ? 'bg-blue-700 text-blue-200' : 'bg-green-700 text-green-200'
-            }`}>
+            <span className={`text-xs px-2 py-0.5 rounded-full ${isDrawPhase ? 'bg-blue-700 text-blue-200' : 'bg-green-700 text-green-200'}`}>
               {isDrawPhase ? 'Draw a card' : 'Play or Discard'}
             </span>
           )}
-          <span className="text-felt-400">
-            {isInFoot ? '👣 Foot' : '✋ Hand'} ({myCards.length})
-          </span>
-          {!isInFoot && me.footCount > 0 && (
-            <span className="text-felt-500 text-xs">Foot: {me.footCount}</span>
-          )}
+          <span className="text-felt-400">{isInFoot ? '👣 Foot' : '✋ Hand'} ({myCards.length})</span>
+          {!isInFoot && me.footCount > 0 && <span className="text-felt-500 text-xs">Foot: {me.footCount}</span>}
         </div>
-
         <div className="flex items-center gap-2">
-          {selectedCardIds.length > 0 && (
-            <span className="text-xs text-gold-400">{selectedCardIds.length} selected ({selectedPoints} pts)</span>
-          )}
-          {selectedCardIds.length > 0 && (
-            <Button variant="ghost" size="sm" onClick={clearSelection}>Clear</Button>
-          )}
+          {selectedCardIds.length > 0 && <span className="text-xs text-gold-400">{selectedCardIds.length} selected ({selectedPoints} pts)</span>}
+          {selectedCardIds.length > 0 && <Button variant="ghost" size="sm" onClick={clearSelection}>Clear</Button>}
         </div>
       </div>
 
@@ -306,22 +263,18 @@ export function PlayerHand({ gameState, groups, onMoveToGroup, onAddGroup, onRem
       {isMyTurn && !gameState.players[gameState.currentPlayerIndex]?.isBot && (
         <div className="flex gap-2 flex-wrap">
           {isDrawPhase ? (
-            <>
-              {canDrawDiscard && (
-                <Button variant="secondary" size="sm" onClick={handleDrawDiscard}>
-                  📥 Take Discard ({gameState.discardPile.length})
-                </Button>
-              )}
-            </>
+            canDrawDiscard && (
+              <Button variant="secondary" size="sm" onClick={handleDrawDiscard}>
+                📥 Take Discard ({gameState.discardPile.length})
+              </Button>
+            )
           ) : (
             <>
               <Button variant="secondary" size="sm" onClick={handleDiscard} disabled={selectedCardIds.length !== 1}>
                 🗑 Discard Selected
               </Button>
               {isInFoot && myCards.length === 0 && (
-                <Button variant="gold" size="sm" onClick={() => setShowGoOutConfirm(true)}>
-                  🏆 Go Out!
-                </Button>
+                <Button variant="gold" size="sm" onClick={() => setShowGoOutConfirm(true)}>🏆 Go Out!</Button>
               )}
             </>
           )}
@@ -329,13 +282,12 @@ export function PlayerHand({ gameState, groups, onMoveToGroup, onAddGroup, onRem
       )}
 
       {/* Groups */}
-      <div ref={containerRef} className="w-full space-y-3 max-h-72 overflow-y-auto pr-1">
+      <div ref={containerRef} className="w-full space-y-2 max-h-72 overflow-y-auto pr-1">
         {myCards.length === 0 ? (
           <div className="py-4 text-center">
             {isInFoot
               ? <p className="text-green-400 text-sm font-semibold">All foot cards played!</p>
-              : <p className="text-felt-400 text-sm">No cards in hand</p>
-            }
+              : <p className="text-felt-400 text-sm">No cards in hand</p>}
           </div>
         ) : (
           <>
@@ -348,15 +300,15 @@ export function PlayerHand({ gameState, groups, onMoveToGroup, onAddGroup, onRem
                 selectedCardIds={selectedCardIds}
                 newCardIds={newCardIds}
                 hasOtherSelected={hasSelectedOutside(group.id)}
+                isUngrouped={group.id === UNGROUPED_ID}
                 onSelect={toggleCardSelection}
                 onMoveHere={() => handleMoveToGroup(group.id)}
                 onRemove={() => onRemoveGroup(group.id)}
-                onRename={name => onRenameGroup(group.id, name)}
               />
             ))}
             <button
               onClick={onAddGroup}
-              className="text-xs text-felt-600 hover:text-felt-300 transition-colors flex items-center gap-1 px-1"
+              className="text-xs text-felt-600 hover:text-felt-400 transition-colors flex items-center gap-1 px-1 pt-1"
             >
               + New Group
             </button>
@@ -368,9 +320,7 @@ export function PlayerHand({ gameState, groups, onMoveToGroup, onAddGroup, onRem
       <AnimatePresence>
         {showGoOutConfirm && (
           <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 10 }}
+            initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}
             className="bg-gold-500/20 border border-gold-500 rounded-xl p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
           >
             <div>

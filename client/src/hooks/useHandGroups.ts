@@ -5,7 +5,6 @@ export const UNGROUPED_ID = '__ungrouped__';
 
 export interface CardGroup {
   id: string;
-  name: string;
   cardIds: string[];
 }
 
@@ -17,7 +16,7 @@ export function useHandGroups(storageKey: string | null, myCards: Card[]) {
         if (stored) return JSON.parse(stored);
       } catch {}
     }
-    return [{ id: UNGROUPED_ID, name: '', cardIds: [] }];
+    return [{ id: UNGROUPED_ID, cardIds: [] }];
   });
 
   const setGroups = useCallback((updater: CardGroup[] | ((prev: CardGroup[]) => CardGroup[])) => {
@@ -45,10 +44,15 @@ export function useHandGroups(storageKey: string | null, myCards: Card[]) {
   }, [myCards.map(c => c.id).join(',')]);
 
   const addGroup = useCallback(() => {
-    setGroups(prev => {
-      const n = prev.filter(g => g.id !== UNGROUPED_ID).length + 1;
-      return [...prev, { id: crypto.randomUUID(), name: `Group ${n}`, cardIds: [] }];
-    });
+    setGroups(prev => [...prev, { id: crypto.randomUUID(), cardIds: [] }]);
+  }, [setGroups]);
+
+  // Create a new group pre-populated with one card (used by ghost drop target)
+  const addGroupWithCard = useCallback((cardId: string) => {
+    setGroups(prev => [
+      ...prev.map(g => ({ ...g, cardIds: g.cardIds.filter(id => id !== cardId) })),
+      { id: crypto.randomUUID(), cardIds: [cardId] },
+    ]);
   }, [setGroups]);
 
   const removeGroup = useCallback((groupId: string) => {
@@ -59,10 +63,6 @@ export function useHandGroups(storageKey: string | null, myCards: Card[]) {
         .map(g => g.id === UNGROUPED_ID ? { ...g, cardIds: [...g.cardIds, ...group.cardIds] } : g)
         .filter(g => g.id !== groupId);
     });
-  }, [setGroups]);
-
-  const renameGroup = useCallback((groupId: string, name: string) => {
-    setGroups(prev => prev.map(g => g.id === groupId ? { ...g, name } : g));
   }, [setGroups]);
 
   const moveCardsToGroup = useCallback((cardIds: string[], targetGroupId: string) => {
@@ -83,5 +83,5 @@ export function useHandGroups(storageKey: string | null, myCards: Card[]) {
     return groups.find(g => g.cardIds.includes(cardId));
   }, [groups]);
 
-  return { groups, addGroup, removeGroup, renameGroup, moveCardsToGroup, reorderWithinGroup, findCardGroup };
+  return { groups, addGroup, addGroupWithCard, removeGroup, moveCardsToGroup, reorderWithinGroup, findCardGroup };
 }

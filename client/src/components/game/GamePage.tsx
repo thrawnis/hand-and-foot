@@ -36,7 +36,7 @@ export function GamePage() {
   const myIndex = gameState?.myPlayerIndex ?? -1;
   const myCards = (myIndex >= 0 ? gameState?.players[myIndex]?.hand : undefined) ?? [];
   const groupStorageKey = gameState && myIndex >= 0 ? `hf_groups_${gameState.code}_${myIndex}` : null;
-  const { groups, addGroup, removeGroup, renameGroup, moveCardsToGroup, reorderWithinGroup, findCardGroup } =
+  const { groups, addGroup, addGroupWithCard, removeGroup, moveCardsToGroup, reorderWithinGroup, findCardGroup } =
     useHandGroups(groupStorageKey, myCards);
 
   useEffect(() => {
@@ -95,6 +95,12 @@ export function GamePage() {
         const newIdx = activeGroup.cardIds.indexOf(overId);
         reorderWithinGroup(activeGroup.id, arrayMove(activeGroup.cardIds, oldIdx, newIdx));
       }
+      return;
+    }
+
+    // Drop card onto the ghost target → create a new group with that card
+    if (activeType === 'hand-card' && overType === 'new-group-slot') {
+      addGroupWithCard(String(active.id));
       return;
     }
 
@@ -265,7 +271,6 @@ export function GamePage() {
                 onMoveToGroup={moveCardsToGroup}
                 onAddGroup={addGroup}
                 onRemoveGroup={removeGroup}
-                onRenameGroup={renameGroup}
               />
             </div>
           )}
