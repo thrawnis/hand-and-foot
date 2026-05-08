@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { ClientGameState } from '../../types';
 import { CardComponent } from './CardComponent';
+import { drawStock } from '../../hooks/useSocket';
 
 interface StockAndDiscardProps {
   gameState: ClientGameState;
@@ -9,6 +10,12 @@ interface StockAndDiscardProps {
 export function StockAndDiscard({ gameState }: StockAndDiscardProps) {
   const topDiscard = gameState.discardPile[gameState.discardPile.length - 1];
   const discardCount = gameState.discardPile.length;
+
+  const myIndex = gameState.myPlayerIndex;
+  const isMyTurn = gameState.currentPlayerIndex === myIndex;
+  const isDrawPhase = gameState.turnPhase === 'draw';
+  const isBot = gameState.players[gameState.currentPlayerIndex]?.isBot;
+  const canDrawStock = isMyTurn && isDrawPhase && !isBot;
 
   return (
     <div className="flex items-center justify-center gap-8">
@@ -22,12 +29,19 @@ export function StockAndDiscard({ gameState }: StockAndDiscardProps) {
           {gameState.stockCount > 2 && (
             <div className="absolute top-0.5 left-0.5 w-14 h-20 rounded-lg bg-blue-800 border-2 border-blue-600" />
           )}
-          <div className="relative w-14 h-20 rounded-lg bg-blue-800 border-2 border-blue-600 shadow-card flex items-center justify-center cursor-default">
+          <div
+            onClick={canDrawStock ? drawStock : undefined}
+            className={`relative w-14 h-20 rounded-lg bg-blue-800 border-2 shadow-card flex items-center justify-center transition-colors ${
+              canDrawStock
+                ? 'border-gold-400 cursor-pointer hover:bg-blue-700 hover:border-gold-300'
+                : 'border-blue-600 cursor-default'
+            }`}
+          >
             <span className="text-blue-300 text-xl">🂠</span>
           </div>
         </div>
         <span className="text-felt-300 text-xs font-medium">{gameState.stockCount} left</span>
-        <span className="text-felt-400 text-xs">Stock</span>
+        <span className="text-felt-400 text-xs">{canDrawStock ? 'Click to draw' : 'Stock'}</span>
       </div>
 
       {/* Discard pile */}

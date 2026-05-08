@@ -6,7 +6,7 @@ import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable';
 import { Card, ClientGameState } from '../../types';
 import { CardComponent } from './CardComponent';
 import { useGameStore } from '../../store/gameStore';
-import { discardCard, drawStock, drawDiscard, goOut } from '../../hooks/useSocket';
+import { discardCard, drawDiscard, goOut } from '../../hooks/useSocket';
 import { Button } from '../common/Button';
 import toast from 'react-hot-toast';
 
@@ -160,7 +160,7 @@ export function PlayerHand({ gameState, handOrder, setHandOrder }: PlayerHandPro
             {isInFoot ? '👣 Foot' : '✋ Hand'} ({myCards.length})
           </span>
           {!isInFoot && me.footCount > 0 && (
-            <span className="text-orange-400 text-xs">🥾 Foot waiting ({me.footCount})</span>
+            <span className="text-felt-500 text-xs">Foot: {me.footCount}</span>
           )}
         </div>
 
@@ -181,7 +181,6 @@ export function PlayerHand({ gameState, handOrder, setHandOrder }: PlayerHandPro
         <div className="flex gap-2 flex-wrap">
           {isDrawPhase ? (
             <>
-              <Button variant="primary" size="sm" onClick={drawStock}>🃏 Draw 2</Button>
               {canDrawDiscard && (
                 <Button variant="secondary" size="sm" onClick={handleDrawDiscard}>
                   📥 Take Discard ({gameState.discardPile.length})
