@@ -5,6 +5,7 @@ import { arrayMove } from '@dnd-kit/sortable';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGameStore } from '../../store/gameStore';
 import { useSocket, joinGame, spectateGame, playCards, closeBook as closeBookAction, requestUndo, respondUndo } from '../../hooks/useSocket';
+import { useHandGroups } from '../../hooks/useHandGroups';
 import { ScoreBoard } from './ScoreBoard';
 import { TeamBooksPanel } from './TeamBooksPanel';
 import { PlayerHand } from './PlayerHand';
@@ -26,12 +27,17 @@ export function GamePage() {
   const [draggingCard, setDraggingCard] = useState<Card | null>(null);
   const [joinModal, setJoinModal] = useState<LobbyGame | null>(null);
   const [loading, setLoading] = useState(true);
-  const [handOrder, setHandOrder] = useState<string[]>([]);
 
   const sensors = useSensors(
     useSensor(MouseSensor),
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
   );
+
+  const myIndex = gameState?.myPlayerIndex ?? -1;
+  const myCards = (myIndex >= 0 ? gameState?.players[myIndex]?.hand : undefined) ?? [];
+  const groupStorageKey = gameState && myIndex >= 0 ? `hf_groups_${gameState.code}_${myIndex}` : null;
+  const { groups, addGroup, removeGroup, renameGroup, moveCardsToGroup, reorderWithinGroup, findCardGroup } =
+    useHandGroups(groupStorageKey, myCards);
 
   useEffect(() => {
     if (!code) return;
@@ -77,14 +83,18 @@ export function GamePage() {
     const activeType = active.data.current?.type;
     const overType = over.data.current?.type;
 
-    // Sort within hand
+    // Sort within hand group
     if (activeType === 'hand-card' && overType === 'hand-card') {
-      setHandOrder((prev) => {
-        const oldIdx = prev.indexOf(String(active.id));
-        const newIdx = prev.indexOf(String(over.id));
-        if (oldIdx === -1 || newIdx === -1) return prev;
-        return arrayMove(prev, oldIdx, newIdx);
-      });
+      const activeId = String(active.id);
+      const overId = String(over.id);
+      const activeGroup = findCardGroup(activeId);
+      if (!activeGroup) return;
+      // Only reorder within same group
+      if (activeGroup.cardIds.includes(overId)) {
+        const oldIdx = activeGroup.cardIds.indexOf(activeId);
+        const newIdx = activeGroup.cardIds.indexOf(overId);
+        reorderWithinGroup(activeGroup.id, arrayMove(activeGroup.cardIds, oldIdx, newIdx));
+      }
       return;
     }
 
@@ -125,7 +135,6 @@ export function GamePage() {
     );
   }
 
-  const myIndex = gameState.myPlayerIndex;
   const isSpectator = myIndex === -1;
   const me = myIndex >= 0 ? gameState.players[myIndex] : null;
   const myTeamIndex = me?.teamIndex ?? -1;
@@ -250,7 +259,14 @@ export function GamePage() {
 
           {!isSpectator && (
             <div className="shrink-0">
-              <PlayerHand gameState={gameState} handOrder={handOrder} setHandOrder={setHandOrder} />
+              <PlayerHand
+                gameState={gameState}
+                groups={groups}
+                onMoveToGroup={moveCardsToGroup}
+                onAddGroup={addGroup}
+                onRemoveGroup={removeGroup}
+                onRenameGroup={renameGroup}
+              />
             </div>
           )}
         </div>

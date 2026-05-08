@@ -8,14 +8,14 @@ import { CardComponent } from './CardComponent';
 import { useGameStore } from '../../store/gameStore';
 import { discardCard, drawDiscard, goOut } from '../../hooks/useSocket';
 import { Button } from '../common/Button';
+import { CardGroup, UNGROUPED_ID } from '../../hooks/useHandGroups';
 import toast from 'react-hot-toast';
 
-// Card pixel dimensions for the 'sm' size used in the fan
 const CARD_W = 40;
 const CARD_H = 56;
-const LIFT = 14;   // how far a selected card lifts above the baseline
-const MIN_STEP = 14; // minimum px between card left-edges when heavily overlapped
-const MAX_STEP = CARD_W + 6; // full spacing, no overlap
+const LIFT = 14;
+const MIN_STEP = 14;
+const MAX_STEP = CARD_W + 6;
 
 interface SortableCardProps {
   card: Card;
@@ -60,13 +60,131 @@ function SortableCard({ card, index, step, totalCards, selected, isNew, onSelect
   );
 }
 
-interface PlayerHandProps {
-  gameState: ClientGameState;
-  handOrder: string[];
-  setHandOrder: (order: string[]) => void;
+interface GroupRowProps {
+  group: CardGroup;
+  idToCard: Map<string, Card>;
+  containerWidth: number;
+  selectedCardIds: string[];
+  newCardIds: Set<string>;
+  hasOtherSelected: boolean; // selected cards NOT all in this group
+  onSelect: (id: string) => void;
+  onMoveHere: () => void;
+  onRemove: () => void;
+  onRename: (name: string) => void;
 }
 
-export function PlayerHand({ gameState, handOrder, setHandOrder }: PlayerHandProps) {
+function GroupRow({
+  group, idToCard, containerWidth, selectedCardIds, newCardIds,
+  hasOtherSelected, onSelect, onMoveHere, onRemove, onRename,
+}: GroupRowProps) {
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState(group.name);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const isUngrouped = group.id === UNGROUPED_ID;
+
+  const cards = group.cardIds.map(id => idToCard.get(id)).filter(Boolean) as Card[];
+  const n = cards.length;
+  const step = n <= 1 ? 0 : Math.max(MIN_STEP, Math.min(MAX_STEP, (containerWidth - CARD_W) / (n - 1)));
+  const fanWidth = n <= 1 ? CARD_W : step * (n - 1) + CARD_W;
+  const fanHeight = CARD_H + LIFT + 4;
+
+  const startEdit = () => {
+    setEditName(group.name);
+    setEditing(true);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
+  const commitEdit = () => {
+    setEditing(false);
+    onRename(editName.trim() || group.name);
+  };
+
+  return (
+    <div>
+      {/* Group header */}
+      <div className="flex items-center gap-1.5 px-1 mb-1 min-h-[20px]">
+        {isUngrouped ? (
+          <span className="text-xs text-felt-600 select-none">Ungrouped</span>
+        ) : editing ? (
+          <input
+            ref={inputRef}
+            value={editName}
+            onChange={e => setEditName(e.target.value)}
+            onBlur={commitEdit}
+            onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') setEditing(false); }}
+            className="text-xs bg-felt-700 border border-gold-500 rounded px-1.5 py-0.5 text-white w-28 focus:outline-none"
+          />
+        ) : (
+          <button
+            onClick={startEdit}
+            title="Click to rename"
+            className="text-xs font-medium text-felt-300 hover:text-white transition-colors"
+          >
+            {group.name || 'Unnamed'}
+          </button>
+        )}
+
+        {/* Move selected here */}
+        {hasOtherSelected && (
+          <button
+            onClick={onMoveHere}
+            className="text-xs px-1.5 py-0.5 rounded border border-felt-600 text-felt-400 hover:border-gold-500 hover:text-gold-400 transition-colors"
+          >
+            ← here
+          </button>
+        )}
+
+        {/* Remove group (not for ungrouped) */}
+        {!isUngrouped && (
+          <button
+            onClick={onRemove}
+            title="Remove group (cards return to ungrouped)"
+            className="ml-auto text-felt-600 hover:text-red-400 transition-colors text-sm leading-none px-1"
+          >
+            ×
+          </button>
+        )}
+      </div>
+
+      {/* Cards */}
+      {n === 0 ? (
+        <div className="h-10 border border-dashed border-felt-700 rounded-lg flex items-center justify-center text-felt-600 text-xs">
+          {isUngrouped ? 'All cards are in groups' : 'Empty'}
+        </div>
+      ) : (
+        <SortableContext items={group.cardIds} strategy={rectSortingStrategy}>
+          <div className="overflow-x-auto">
+            <div className="relative" style={{ width: Math.max(fanWidth, containerWidth), height: fanHeight }}>
+              {cards.map((card, i) => (
+                <SortableCard
+                  key={card.id}
+                  card={card}
+                  index={i}
+                  step={step}
+                  totalCards={n}
+                  selected={selectedCardIds.includes(card.id)}
+                  isNew={newCardIds.has(card.id)}
+                  onSelect={() => onSelect(card.id)}
+                />
+              ))}
+            </div>
+          </div>
+        </SortableContext>
+      )}
+    </div>
+  );
+}
+
+interface PlayerHandProps {
+  gameState: ClientGameState;
+  groups: CardGroup[];
+  onMoveToGroup: (cardIds: string[], groupId: string) => void;
+  onAddGroup: () => void;
+  onRemoveGroup: (groupId: string) => void;
+  onRenameGroup: (groupId: string, name: string) => void;
+}
+
+export function PlayerHand({ gameState, groups, onMoveToGroup, onAddGroup, onRemoveGroup, onRenameGroup }: PlayerHandProps) {
   const { selectedCardIds, toggleCardSelection, clearSelection } = useGameStore();
   const [showGoOutConfirm, setShowGoOutConfirm] = useState(false);
   const [containerWidth, setContainerWidth] = useState(360);
@@ -83,7 +201,9 @@ export function PlayerHand({ gameState, handOrder, setHandOrder }: PlayerHandPro
   const myCards = me.hand ?? [];
   const isInFoot = me.inFoot;
 
-  // Track container width for fan step calculation
+  const idToCard = new Map(myCards.map(c => [c.id, c]));
+
+  // Track container width
   useEffect(() => {
     if (!containerRef.current) return;
     setContainerWidth(containerRef.current.offsetWidth);
@@ -92,47 +212,24 @@ export function PlayerHand({ gameState, handOrder, setHandOrder }: PlayerHandPro
     return () => ro.disconnect();
   }, []);
 
-  // Detect newly drawn cards and clear the highlight after an action
+  // Detect newly drawn cards; clear glow on action or turn change
   useEffect(() => {
     const prev = prevRef.current;
-    const cardIds = new Set(myCards.map((c) => c.id));
+    const cardIds = new Set(myCards.map(c => c.id));
 
     if (isMyTurn) {
       if (prev.phase === 'draw' && gameState.turnPhase === 'play') {
-        // Phase just flipped draw→play: diff gives us the drawn cards
-        const added = [...cardIds].filter((id) => !prev.cardIds.has(id));
+        const added = [...cardIds].filter(id => !prev.cardIds.has(id));
         setNewCardIds(new Set(added));
       } else if (gameState.turnPhase === 'play' && cardIds.size < prev.cardIds.size) {
-        // Hand shrank during play phase (card discarded or played)
         setNewCardIds(new Set());
       }
     } else if (prev.myTurn) {
-      // Turn just passed to another player
       setNewCardIds(new Set());
     }
 
     prevRef.current = { phase: gameState.turnPhase, myTurn: isMyTurn, cardIds };
   }, [gameState.turnPhase, gameState.currentPlayerIndex, myCards.length]);
-
-  // Keep handOrder in sync with actual cards
-  useEffect(() => {
-    const currentIds = myCards.map((c) => c.id);
-    const valid = handOrder.filter((id) => currentIds.includes(id));
-    const newCards = currentIds.filter((id) => !handOrder.includes(id));
-    if (valid.length !== handOrder.length || newCards.length > 0) {
-      setHandOrder([...valid, ...newCards]);
-    }
-  }, [myCards.map((c) => c.id).join(',')]);
-
-  // Render cards in user's preferred order
-  const idToCard = new Map(myCards.map((c) => [c.id, c]));
-  const sortedCards = handOrder.map((id) => idToCard.get(id)).filter(Boolean) as Card[];
-
-  // Fan layout: spread cards across the full container width with overlap when needed
-  const n = sortedCards.length;
-  const step = n <= 1 ? 0 : Math.max(MIN_STEP, Math.min(MAX_STEP, (containerWidth - CARD_W) / (n - 1)));
-  const fanWidth = n <= 1 ? CARD_W : step * (n - 1) + CARD_W;
-  const fanHeight = CARD_H + LIFT + 4;
 
   const topDiscard = gameState.discardPile[gameState.discardPile.length - 1];
   const canDrawDiscard =
@@ -140,26 +237,33 @@ export function PlayerHand({ gameState, handOrder, setHandOrder }: PlayerHandPro
     !topDiscard.isWild &&
     !topDiscard.isRed3 &&
     !topDiscard.isBlack3 &&
-    myCards.filter((c) => c.rank === topDiscard.rank && !c.isWild).length >= 2;
+    myCards.filter(c => c.rank === topDiscard.rank && !c.isWild).length >= 2;
 
   const handleDiscard = () => {
-    if (selectedCardIds.length !== 1) {
-      toast.error('Select exactly 1 card to discard');
-      return;
-    }
+    if (selectedCardIds.length !== 1) { toast.error('Select exactly 1 card to discard'); return; }
     discardCard(selectedCardIds[0]);
     clearSelection();
   };
 
   const handleDrawDiscard = () => {
     if (!topDiscard) return;
-    const matching = myCards.filter((c) => c.rank === topDiscard.rank && !c.isWild);
+    const matching = myCards.filter(c => c.rank === topDiscard.rank && !c.isWild);
     drawDiscard([matching[0].id, matching[1].id]);
   };
 
+  const handleMoveToGroup = (groupId: string) => {
+    onMoveToGroup(selectedCardIds, groupId);
+    clearSelection();
+  };
+
   const selectedPoints = myCards
-    .filter((c) => selectedCardIds.includes(c.id))
+    .filter(c => selectedCardIds.includes(c.id))
     .reduce((s, c) => s + c.pointValue, 0);
+
+  // Determine if selected cards include any not in a given group
+  const hasSelectedOutside = (groupId: string) =>
+    selectedCardIds.length > 0 &&
+    !selectedCardIds.every(id => groups.find(g => g.id === groupId)?.cardIds.includes(id));
 
   return (
     <div className="bg-felt-900/90 border-t border-felt-700 p-3 space-y-3">
@@ -167,9 +271,7 @@ export function PlayerHand({ gameState, handOrder, setHandOrder }: PlayerHandPro
       <div className="flex items-center justify-between text-sm flex-wrap gap-2">
         <div className="flex items-center gap-2 flex-wrap">
           {gameState.players[gameState.currentPlayerIndex]?.isBot && !isMyTurn ? (
-            <span className="font-semibold text-felt-300 animate-pulse">
-              🤖 Bot is thinking...
-            </span>
+            <span className="font-semibold text-felt-300 animate-pulse">🤖 Bot is thinking...</span>
           ) : (
             <span className={`font-semibold ${isMyTurn ? 'text-gold-400' : 'text-felt-300'}`}>
               {isMyTurn ? '⭐ Your Turn' : `${gameState.players[gameState.currentPlayerIndex]?.name}'s Turn`}
@@ -192,9 +294,7 @@ export function PlayerHand({ gameState, handOrder, setHandOrder }: PlayerHandPro
 
         <div className="flex items-center gap-2">
           {selectedCardIds.length > 0 && (
-            <span className="text-xs text-gold-400">
-              {selectedCardIds.length} selected ({selectedPoints} pts)
-            </span>
+            <span className="text-xs text-gold-400">{selectedCardIds.length} selected ({selectedPoints} pts)</span>
           )}
           {selectedCardIds.length > 0 && (
             <Button variant="ghost" size="sm" onClick={clearSelection}>Clear</Button>
@@ -228,8 +328,8 @@ export function PlayerHand({ gameState, handOrder, setHandOrder }: PlayerHandPro
         </div>
       )}
 
-      {/* Fan hand layout — all cards visible without scrolling */}
-      <div ref={containerRef} className="w-full">
+      {/* Groups */}
+      <div ref={containerRef} className="w-full space-y-3 max-h-72 overflow-y-auto pr-1">
         {myCards.length === 0 ? (
           <div className="py-4 text-center">
             {isInFoot
@@ -238,25 +338,29 @@ export function PlayerHand({ gameState, handOrder, setHandOrder }: PlayerHandPro
             }
           </div>
         ) : (
-          <SortableContext items={handOrder} strategy={rectSortingStrategy}>
-            {/* outer div scrolls only as a last resort for very large hands */}
-            <div className="overflow-x-auto">
-              <div className="relative" style={{ width: Math.max(fanWidth, containerWidth), height: fanHeight }}>
-                {sortedCards.map((card, i) => (
-                  <SortableCard
-                    key={card.id}
-                    card={card}
-                    index={i}
-                    step={step}
-                    totalCards={n}
-                    selected={selectedCardIds.includes(card.id)}
-                    isNew={newCardIds.has(card.id)}
-                    onSelect={() => toggleCardSelection(card.id)}
-                  />
-                ))}
-              </div>
-            </div>
-          </SortableContext>
+          <>
+            {groups.map(group => (
+              <GroupRow
+                key={group.id}
+                group={group}
+                idToCard={idToCard}
+                containerWidth={containerWidth}
+                selectedCardIds={selectedCardIds}
+                newCardIds={newCardIds}
+                hasOtherSelected={hasSelectedOutside(group.id)}
+                onSelect={toggleCardSelection}
+                onMoveHere={() => handleMoveToGroup(group.id)}
+                onRemove={() => onRemoveGroup(group.id)}
+                onRename={name => onRenameGroup(group.id, name)}
+              />
+            ))}
+            <button
+              onClick={onAddGroup}
+              className="text-xs text-felt-600 hover:text-felt-300 transition-colors flex items-center gap-1 px-1"
+            >
+              + New Group
+            </button>
+          </>
         )}
       </div>
 
