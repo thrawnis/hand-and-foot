@@ -95,12 +95,14 @@ function GroupRow({
   const ghostLeft = n === 0 ? 0 : n * effectiveStep;
   const fanWidth = ghostLeft + CARD_W + 4; // include ghost card
   const fanHeight = CARD_H + LIFT + 4;
+  const totalPoints = cards.reduce((s, c) => s + c.pointValue, 0);
 
   return (
     <div>
       {/* Separator + controls for named groups */}
       {!isUngrouped && (
         <div className="flex items-center gap-2 px-1 mb-1">
+          <span className="text-xs text-felt-500">{totalPoints} pts</span>
           <div className="flex-1 h-px bg-felt-700" />
           {hasOtherSelected && (
             <button
@@ -120,15 +122,18 @@ function GroupRow({
         </div>
       )}
 
-      {/* Move-here for ungrouped when some selected cards are in other groups */}
-      {isUngrouped && hasOtherSelected && (
-        <div className="flex justify-end px-1 mb-1">
-          <button
-            onClick={onMoveHere}
-            className="text-xs px-1.5 py-0.5 rounded border border-felt-600 text-felt-400 hover:border-gold-500 hover:text-gold-400 transition-colors"
-          >
-            ← ungrouped
-          </button>
+      {/* Points + optional move-here for ungrouped */}
+      {isUngrouped && (
+        <div className="flex items-center justify-between px-1 mb-1">
+          <span className="text-xs text-felt-500">{totalPoints} pts</span>
+          {hasOtherSelected && (
+            <button
+              onClick={onMoveHere}
+              className="text-xs px-1.5 py-0.5 rounded border border-felt-600 text-felt-400 hover:border-gold-500 hover:text-gold-400 transition-colors"
+            >
+              ← ungrouped
+            </button>
+          )}
         </div>
       )}
 
