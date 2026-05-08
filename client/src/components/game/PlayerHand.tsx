@@ -23,10 +23,11 @@ interface SortableCardProps {
   step: number;
   totalCards: number;
   selected: boolean;
+  isNew: boolean;
   onSelect: () => void;
 }
 
-function SortableCard({ card, index, step, totalCards, selected, onSelect }: SortableCardProps) {
+function SortableCard({ card, index, step, totalCards, selected, isNew, onSelect }: SortableCardProps) {
   const { setNodeRef, transform, isDragging, attributes, listeners } = useSortable({
     id: card.id,
     data: { card, type: 'hand-card' },
@@ -37,6 +38,7 @@ function SortableCard({ card, index, step, totalCards, selected, onSelect }: Sor
       ref={setNodeRef}
       {...attributes}
       {...listeners}
+      className={isNew ? 'rounded-lg ring-2 ring-sky-300/70 shadow-[0_0_8px_3px_rgba(125,211,252,0.35)]' : undefined}
       style={{
         position: 'absolute',
         left: index * step,
@@ -68,7 +70,9 @@ export function PlayerHand({ gameState, handOrder, setHandOrder }: PlayerHandPro
   const { selectedCardIds, toggleCardSelection, clearSelection } = useGameStore();
   const [showGoOutConfirm, setShowGoOutConfirm] = useState(false);
   const [containerWidth, setContainerWidth] = useState(360);
+  const [newCardIds, setNewCardIds] = useState<Set<string>>(new Set());
   const containerRef = useRef<HTMLDivElement>(null);
+  const prevRef = useRef({ phase: gameState.turnPhase, myTurn: false, cardIds: new Set<string>() });
 
   const myIndex = gameState.myPlayerIndex;
   const me = myIndex >= 0 ? gameState.players[myIndex] : null;
@@ -87,6 +91,28 @@ export function PlayerHand({ gameState, handOrder, setHandOrder }: PlayerHandPro
     ro.observe(containerRef.current);
     return () => ro.disconnect();
   }, []);
+
+  // Detect newly drawn cards and clear the highlight after an action
+  useEffect(() => {
+    const prev = prevRef.current;
+    const cardIds = new Set(myCards.map((c) => c.id));
+
+    if (isMyTurn) {
+      if (prev.phase === 'draw' && gameState.turnPhase === 'play') {
+        // Phase just flipped draw→play: diff gives us the drawn cards
+        const added = [...cardIds].filter((id) => !prev.cardIds.has(id));
+        setNewCardIds(new Set(added));
+      } else if (gameState.turnPhase === 'play' && cardIds.size < prev.cardIds.size) {
+        // Hand shrank during play phase (card discarded or played)
+        setNewCardIds(new Set());
+      }
+    } else if (prev.myTurn) {
+      // Turn just passed to another player
+      setNewCardIds(new Set());
+    }
+
+    prevRef.current = { phase: gameState.turnPhase, myTurn: isMyTurn, cardIds };
+  }, [gameState.turnPhase, gameState.currentPlayerIndex, myCards.length]);
 
   // Keep handOrder in sync with actual cards
   useEffect(() => {
@@ -224,6 +250,7 @@ export function PlayerHand({ gameState, handOrder, setHandOrder }: PlayerHandPro
                     step={step}
                     totalCards={n}
                     selected={selectedCardIds.includes(card.id)}
+                    isNew={newCardIds.has(card.id)}
                     onSelect={() => toggleCardSelection(card.id)}
                   />
                 ))}
