@@ -31,8 +31,21 @@ app.use(`/api${ADMIN_PATH}`, adminRouter);
 // Serve built client in production
 if (!isDev) {
   const publicPath = path.join(__dirname, '..', 'public');
-  app.use(express.static(publicPath));
+  // Hashed assets (/assets/*) can be cached indefinitely — filename changes each build.
+  // index.html must never be cached so browsers always load the latest asset URLs.
+  app.use(express.static(publicPath, {
+    setHeaders(res, filePath) {
+      if (filePath.endsWith('index.html')) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+      }
+    },
+  }));
   app.get('*', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     res.sendFile(path.join(publicPath, 'index.html'));
   });
 }
