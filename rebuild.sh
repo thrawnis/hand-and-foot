@@ -16,5 +16,6 @@ docker compose build
 echo "Starting container (auto-pull + rebuild will run inside)..."
 docker compose up -d
 
+echo "Deployed: $(git rev-parse --short HEAD) — $(git log -1 --format='%s')"
 echo "Done. Tailing logs for 10 seconds (Ctrl+C to stop early)..."
 timeout 10 docker compose logs -f || true
