@@ -45,7 +45,7 @@ export function LobbyPage() {
             <div className="text-4xl select-none">🃏</div>
             <div>
               <h1 className="text-2xl font-bold text-white tracking-tight">Hand &amp; Foot</h1>
-              <p className="text-felt-300 text-sm">Multiplayer Card Game</p>
+              <p className="text-felt-300 text-sm">Multiplayer Card Game <span className="text-felt-600 text-xs font-mono">#{__GIT_HASH__}</span></p>
             </div>
           </div>
           <Button variant="gold" size="lg" onClick={() => setShowNewGame(true)}>
