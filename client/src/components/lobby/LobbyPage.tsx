@@ -6,14 +6,168 @@ import { GameCard } from './GameCard';
 import { NewGameModal } from './NewGameModal';
 import { JoinGameModal } from './JoinGameModal';
 import { Button } from '../common/Button';
-import { LobbyGame } from '../../types';
+import { Modal } from '../common/Modal';
+import { LobbyGame, GameRules, RulePreset, DEFAULT_RULES } from '../../types';
+import toast from 'react-hot-toast';
+
+const ADMIN_TOKEN_KEY = 'hf_admin_token';
+type DeployState = 'idle' | 'pulling' | 'restarting' | 'done' | 'error';
+
+// ── Preset Editor ─────────────────────────────────────────────────────────────
+
+function PresetEditor({ preset, onSave, onCancel }: {
+  preset: Partial<RulePreset>;
+  onSave: (name: string, rules: GameRules) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(preset.name ?? '');
+  const [rules, setRules] = useState<GameRules>(preset.rules ?? { ...DEFAULT_RULES });
+
+  const FIELDS: Array<{ key: keyof GameRules; label: string; type: 'number' | 'number[]' }> = [
+    { key: 'cardsPerHand', label: 'Cards per Hand/Foot', type: 'number' },
+    { key: 'minCardsPerBook', label: 'Min Cards per Book', type: 'number' },
+    { key: 'minCleanBooksToGoOut', label: 'Clean Books to Go Out', type: 'number' },
+    { key: 'minDirtyBooksToGoOut', label: 'Dirty Books to Go Out', type: 'number' },
+    { key: 'maxWildsPerDirtyBook', label: 'Max Wilds per Dirty Book', type: 'number' },
+    { key: 'cleanBookValue', label: 'Clean Book Points', type: 'number' },
+    { key: 'dirtyBookValue', label: 'Dirty Book Points', type: 'number' },
+    { key: 'bookOf3sBonus', label: 'Book of 3s Bonus', type: 'number' },
+    { key: 'cleanBookOf7sBonus', label: 'Clean Book of 7s Bonus', type: 'number' },
+    { key: 'goingOutBonus', label: 'Going Out Bonus', type: 'number' },
+    { key: 'numRounds', label: 'Number of Rounds', type: 'number' },
+    { key: 'red3Penalty', label: 'Red 3 Penalty', type: 'number' },
+    { key: 'black3Penalty', label: 'Black 3 Penalty', type: 'number' },
+    { key: 'roundThresholds', label: 'Round Thresholds', type: 'number[]' },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <label className="block text-sm text-felt-300 mb-1">Preset Name</label>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="e.g. Quick Game, Tournament, etc."
+          className="w-full bg-felt-700 border border-felt-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-gold-500"
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-3 max-h-80 overflow-y-auto">
+        {FIELDS.map(({ key, label, type }) => (
+          <div key={key}>
+            <label className="block text-xs text-felt-400 mb-1">{label}</label>
+            {type === 'number[]' ? (
+              <input
+                type="text"
+                value={(rules[key] as number[]).join(', ')}
+                onChange={(e) => {
+                  const vals = e.target.value.split(',').map((v) => parseInt(v.trim())).filter((v) => !isNaN(v));
+                  setRules((r) => ({ ...r, [key]: vals }));
+                }}
+                className="w-full bg-felt-700 border border-felt-600 rounded px-2 py-1.5 text-white text-sm focus:outline-none focus:border-gold-500"
+              />
+            ) : (
+              <input
+                type="number"
+                value={rules[key] as number}
+                onChange={(e) => setRules((r) => ({ ...r, [key]: parseInt(e.target.value) || 0 }))}
+                className="w-full bg-felt-700 border border-felt-600 rounded px-2 py-1.5 text-white text-sm focus:outline-none focus:border-gold-500"
+              />
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-2 justify-end">
+        <Button variant="ghost" onClick={onCancel}>Cancel</Button>
+        <Button variant="gold" onClick={() => onSave(name, rules)} disabled={!name.trim()}>
+          Save Preset
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ── Presets Modal ─────────────────────────────────────────────────────────────
+
+function PresetsModal({ open, onClose, token }: { open: boolean; onClose: () => void; token: string }) {
+  const [presets, setPresets] = useState<RulePreset[]>([]);
+  const [editing, setEditing] = useState<Partial<RulePreset> | null>(null);
+  const headers = { 'x-admin-token': token, 'Content-Type': 'application/json' };
+
+  useEffect(() => {
+    if (!open) return;
+    fetch('/api/admin/presets', { headers }).then((r) => r.json()).then(setPresets).catch(() => {});
+  }, [open]);
+
+  const handleSave = async (name: string, rules: GameRules) => {
+    if (editing?.id) {
+      const res = await fetch(`/api/admin/presets/${editing.id}`, { method: 'PUT', headers, body: JSON.stringify({ name, rules }) });
+      const updated = await res.json();
+      setPresets((p) => p.map((x) => x.id === updated.id ? updated : x));
+      toast.success('Preset updated');
+    } else {
+      const res = await fetch('/api/admin/presets', { method: 'POST', headers, body: JSON.stringify({ name, rules }) });
+      const created = await res.json();
+      setPresets((p) => [...p, created]);
+      toast.success('Preset created');
+    }
+    setEditing(null);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Delete this preset?')) return;
+    await fetch(`/api/admin/presets/${id}`, { method: 'DELETE', headers });
+    setPresets((p) => p.filter((x) => x.id !== id));
+    toast.success('Preset deleted');
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Rule Presets" size="xl">
+      {editing !== null ? (
+        <PresetEditor preset={editing} onSave={handleSave} onCancel={() => setEditing(null)} />
+      ) : (
+        <div>
+          <div className="flex justify-end mb-4">
+            <Button variant="gold" onClick={() => setEditing({})}>+ New Preset</Button>
+          </div>
+          <div className="space-y-2">
+            {presets.length === 0 && <p className="text-felt-400 text-center py-8">No presets yet</p>}
+            {presets.map((preset) => (
+              <div key={preset.id} className="bg-felt-700 border border-felt-600 rounded-xl p-3 flex items-center justify-between">
+                <div>
+                  <p className="font-semibold text-white">{preset.name}</p>
+                  <p className="text-felt-400 text-xs">
+                    {preset.rules.numRounds} rounds · {preset.rules.playerCount} players · thresholds: {preset.rules.roundThresholds.join('/')}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="ghost" size="sm" onClick={() => setEditing(preset)}>Edit</Button>
+                  <Button variant="danger" size="sm" onClick={() => handleDelete(preset.id)}>Delete</Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+// ── Main Page ─────────────────────────────────────────────────────────────────
 
 export function LobbyPage() {
   useSocket();
   const lobbyGames = useGameStore((s) => s.lobbyGames);
+  const setLobbyGames = useGameStore((s) => s.setLobbyGames);
   const [showNewGame, setShowNewGame] = useState(false);
   const [joiningGame, setJoiningGame] = useState<LobbyGame | null>(null);
   const [pendingRejoin, setPendingRejoin] = useState<{ gameCode: string; sessionToken: string; playerIndex: number } | null>(null);
+
+  // Admin mode
+  const [adminToken, setAdminToken] = useState<string | null>(null);
+  const [serverStartedAt, setServerStartedAt] = useState<number | null>(null);
+  const [deployState, setDeployState] = useState<DeployState>('idle');
+  const [deployOutput, setDeployOutput] = useState('');
+  const [showPresets, setShowPresets] = useState(false);
 
   useEffect(() => {
     subscribeToLobby();
@@ -33,6 +187,84 @@ export function LobbyPage() {
     }
   }, []);
 
+  // Validate admin token on mount
+  useEffect(() => {
+    const token = localStorage.getItem(ADMIN_TOKEN_KEY);
+    if (!token) return;
+    fetch('/api/admin/games', { headers: { 'x-admin-token': token } })
+      .then((r) => {
+        if (r.ok) {
+          setAdminToken(token);
+        } else {
+          localStorage.removeItem(ADMIN_TOKEN_KEY);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Fetch server start time when admin mode is active
+  useEffect(() => {
+    if (!adminToken) return;
+    fetch('/api/health').then((r) => r.json()).then((d) => setServerStartedAt(d.startedAt ?? null)).catch(() => {});
+  }, [adminToken]);
+
+  const handleAdminLogout = async () => {
+    if (adminToken) {
+      await fetch('/api/admin/logout', { method: 'POST', headers: { 'x-admin-token': adminToken } }).catch(() => {});
+    }
+    setAdminToken(null);
+    localStorage.removeItem(ADMIN_TOKEN_KEY);
+  };
+
+  const handleArchiveGame = async (id: string) => {
+    if (!adminToken) return;
+    await fetch(`/api/admin/games/${id}/archive`, { method: 'PATCH', headers: { 'x-admin-token': adminToken } });
+    setLobbyGames(lobbyGames.map((g) => g.id === id ? { ...g, status: 'archived' as const } : g));
+    toast.success('Game archived');
+  };
+
+  const handleDeleteGame = async (id: string) => {
+    if (!adminToken) return;
+    if (!confirm('Delete this game permanently?')) return;
+    await fetch(`/api/admin/games/${id}`, { method: 'DELETE', headers: { 'x-admin-token': adminToken } });
+    setLobbyGames(lobbyGames.filter((g) => g.id !== id));
+    toast.success('Game deleted');
+  };
+
+  const handleDeploy = async () => {
+    if (!adminToken || deployState === 'pulling' || deployState === 'restarting') return;
+    if (!confirm('Pull latest code and restart the server?')) return;
+    setDeployState('pulling');
+    setDeployOutput('');
+    try {
+      const res = await fetch('/api/admin/rebuild', { method: 'POST', headers: { 'x-admin-token': adminToken, 'Content-Type': 'application/json' } });
+      const data = await res.json();
+      setDeployOutput(data.output || '');
+      if (!data.ok) { setDeployState('error'); return; }
+      setDeployState('restarting');
+      await new Promise((r) => setTimeout(r, 2000));
+      const start = Date.now();
+      while (Date.now() - start < 120_000) {
+        await new Promise((r) => setTimeout(r, 2000));
+        try {
+          const health = await fetch('/api/health');
+          if (health.ok) {
+            const hd = await health.json();
+            setServerStartedAt(hd.startedAt ?? null);
+            setDeployState('done');
+            return;
+          }
+        } catch { /* still restarting */ }
+      }
+      setDeployState('error');
+      setDeployOutput((p) => p + '\nTimed out waiting for server to restart.');
+    } catch {
+      setDeployState('error');
+      setDeployOutput('Network error — server may be restarting already.');
+    }
+  };
+
+  const isAdmin = adminToken !== null;
   const activeGames = lobbyGames.filter((g) => g.status === 'active' || g.status === 'waiting');
   const archivedGames = lobbyGames.filter((g) => g.status === 'completed' || g.status === 'archived');
 
@@ -40,19 +272,95 @@ export function LobbyPage() {
     <div className="min-h-screen bg-felt-texture flex flex-col">
       {/* Header */}
       <header className="bg-felt-900/80 backdrop-blur border-b border-felt-700 sticky top-0 z-30">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="text-4xl select-none">🃏</div>
-            <div>
-              <h1 className="text-2xl font-bold text-white tracking-tight">Hand &amp; Foot</h1>
-              <p className="text-felt-300 text-sm">Multiplayer Card Game <span className="text-felt-600 text-xs font-mono">#{__GIT_HASH__}</span></p>
+        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="text-4xl select-none shrink-0">🃏</div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-2xl font-bold text-white tracking-tight">Hand &amp; Foot</h1>
+                {isAdmin && (
+                  <span className="inline-flex items-center gap-1 bg-gold-500/20 border border-gold-500 text-gold-300 text-xs font-bold px-2 py-0.5 rounded-full shrink-0">
+                    🔐 Admin Mode
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="text-felt-300 text-sm">
+                  Multiplayer Card Game <span className="text-felt-600 text-xs font-mono">#{__GIT_HASH__}</span>
+                </p>
+                {isAdmin && serverStartedAt && (
+                  <p className="text-felt-400 text-xs">
+                    · Server started <span className="text-felt-300">{new Date(serverStartedAt).toLocaleString()}</span>
+                  </p>
+                )}
+              </div>
             </div>
           </div>
-          <Button variant="gold" size="lg" onClick={() => setShowNewGame(true)}>
-            + New Game
-          </Button>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {isAdmin && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleDeploy}
+                  loading={deployState === 'pulling' || deployState === 'restarting'}
+                  disabled={deployState === 'pulling' || deployState === 'restarting'}
+                >
+                  {deployState === 'pulling' ? 'Pulling…' : deployState === 'restarting' ? 'Restarting…' : '⬆ Deploy'}
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setShowPresets(true)}>
+                  📋 Presets
+                </Button>
+                <Button variant="ghost" size="sm" onClick={handleAdminLogout}>
+                  Exit Admin
+                </Button>
+              </>
+            )}
+            <Button variant="gold" size="lg" onClick={() => setShowNewGame(true)}>
+              + New Game
+            </Button>
+          </div>
         </div>
       </header>
+
+      {/* Deploy status banner */}
+      <AnimatePresence>
+        {deployState !== 'idle' && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden"
+          >
+            <div className={`border-b px-6 py-3 flex items-start gap-4 ${
+              deployState === 'error' ? 'bg-red-900/40 border-red-700' :
+              deployState === 'done' ? 'bg-green-900/40 border-green-700' :
+              'bg-blue-900/40 border-blue-700'
+            }`}>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-white mb-1">
+                  {deployState === 'pulling' && 'Running git pull…'}
+                  {deployState === 'restarting' && 'Server restarting and rebuilding — this may take ~30 s…'}
+                  {deployState === 'done' && '✓ Deployed successfully'}
+                  {deployState === 'error' && '✗ Deploy failed'}
+                </p>
+                {deployOutput && (
+                  <pre className="text-xs text-felt-300 font-mono whitespace-pre-wrap break-all bg-black/30 rounded p-2 max-h-32 overflow-y-auto">
+                    {deployOutput}
+                  </pre>
+                )}
+              </div>
+              <button
+                onClick={() => { setDeployState('idle'); setDeployOutput(''); }}
+                className="text-felt-400 hover:text-white shrink-0 mt-0.5"
+              >
+                ✕
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <main className="flex-1 max-w-4xl mx-auto w-full px-4 py-8 space-y-8">
         {/* Rejoin banner */}
@@ -117,6 +425,8 @@ export function LobbyPage() {
                     key={game.id}
                     game={game}
                     onJoin={() => setJoiningGame(game)}
+                    onArchive={isAdmin ? () => handleArchiveGame(game.id) : undefined}
+                    onDelete={isAdmin ? () => handleDeleteGame(game.id) : undefined}
                   />
                 ))}
               </AnimatePresence>
@@ -135,6 +445,7 @@ export function LobbyPage() {
                   game={game}
                   onJoin={() => setJoiningGame(game)}
                   muted
+                  onDelete={isAdmin ? () => handleDeleteGame(game.id) : undefined}
                 />
               ))}
             </div>
@@ -147,6 +458,13 @@ export function LobbyPage() {
         <JoinGameModal
           game={joiningGame}
           onClose={() => setJoiningGame(null)}
+        />
+      )}
+      {isAdmin && (
+        <PresetsModal
+          open={showPresets}
+          onClose={() => setShowPresets(false)}
+          token={adminToken}
         />
       )}
     </div>
