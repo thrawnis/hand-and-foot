@@ -149,6 +149,8 @@ function PresetEditor({ preset, onSave, onCancel }: {
   );
 }
 
+type DeployState = 'idle' | 'pulling' | 'restarting' | 'done' | 'error';
+
 export function AdminPage() {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(ADMIN_TOKEN_KEY));
   const [games, setGames] = useState<AdminGame[]>([]);
@@ -156,6 +158,8 @@ export function AdminPage() {
   const [tab, setTab] = useState<'games' | 'presets'>('games');
   const [editingPreset, setEditingPreset] = useState<Partial<RulePreset> | null>(null);
   const [loading, setLoading] = useState(false);
+  const [deployState, setDeployState] = useState<DeployState>('idle');
+  const [deployOutput, setDeployOutput] = useState<string>('');
 
   const authHeaders = { 'x-admin-token': token ?? '', 'Content-Type': 'application/json' };
 
@@ -227,6 +231,37 @@ export function AdminPage() {
     localStorage.removeItem(ADMIN_TOKEN_KEY);
   };
 
+  const handleDeploy = async () => {
+    if (deployState === 'pulling' || deployState === 'restarting') return;
+    setDeployState('pulling');
+    setDeployOutput('');
+    try {
+      const res = await fetch('/api/admin/rebuild', { method: 'POST', headers: authHeaders });
+      const data = await res.json();
+      setDeployOutput(data.output || '');
+      if (!data.ok) {
+        setDeployState('error');
+        return;
+      }
+      // Server will restart — poll health until it comes back
+      setDeployState('restarting');
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      const start = Date.now();
+      while (Date.now() - start < 120_000) {
+        await new Promise((r) => setTimeout(r, 2000));
+        try {
+          const health = await fetch('/api/health');
+          if (health.ok) { setDeployState('done'); return; }
+        } catch { /* still restarting */ }
+      }
+      setDeployState('error');
+      setDeployOutput((prev) => prev + '\nTimed out waiting for server to restart.');
+    } catch {
+      setDeployState('error');
+      setDeployOutput('Network error — server may be restarting already.');
+    }
+  };
+
   if (!token) {
     return <AdminLogin onLogin={(t) => setToken(t)} />;
   }
@@ -244,9 +279,56 @@ export function AdminPage() {
         </div>
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="sm" onClick={loadData} loading={loading}>↻ Refresh</Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleDeploy}
+            loading={deployState === 'pulling' || deployState === 'restarting'}
+            disabled={deployState === 'pulling' || deployState === 'restarting'}
+          >
+            {deployState === 'pulling' ? 'Pulling…' : deployState === 'restarting' ? 'Restarting…' : '⬆ Deploy'}
+          </Button>
           <Button variant="danger" size="sm" onClick={handleLogout}>Logout</Button>
         </div>
       </header>
+
+      {/* Deploy status banner */}
+      <AnimatePresence>
+        {deployState !== 'idle' && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden"
+          >
+            <div className={`border-b px-6 py-3 flex items-start gap-4 ${
+              deployState === 'error' ? 'bg-red-900/40 border-red-700' :
+              deployState === 'done' ? 'bg-green-900/40 border-green-700' :
+              'bg-blue-900/40 border-blue-700'
+            }`}>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-white mb-1">
+                  {deployState === 'pulling' && 'Running git pull…'}
+                  {deployState === 'restarting' && 'Server restarting and rebuilding — this may take ~30 s…'}
+                  {deployState === 'done' && '✓ Deployed successfully'}
+                  {deployState === 'error' && '✗ Deploy failed'}
+                </p>
+                {deployOutput && (
+                  <pre className="text-xs text-felt-300 font-mono whitespace-pre-wrap break-all bg-black/30 rounded p-2 max-h-32 overflow-y-auto">
+                    {deployOutput}
+                  </pre>
+                )}
+              </div>
+              <button
+                onClick={() => { setDeployState('idle'); setDeployOutput(''); }}
+                className="text-felt-400 hover:text-white shrink-0 mt-0.5"
+              >
+                ✕
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="max-w-5xl mx-auto px-4 py-6">
         {/* Tabs */}

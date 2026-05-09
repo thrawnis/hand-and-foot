@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
+import { exec } from 'child_process';
 import { listGames, deleteGame, savePreset, listPresets, deletePreset, loadGame } from '../db';
 import { GameState, RulePreset } from '../types';
 
@@ -101,6 +102,19 @@ router.put('/presets/:id', requireAuth, (req: Request, res: Response) => {
 router.delete('/presets/:id', requireAuth, (req: Request, res: Response) => {
   deletePreset(req.params.id);
   res.json({ ok: true });
+});
+
+router.post('/rebuild', requireAuth, (_req: Request, res: Response) => {
+  exec('git pull --ff-only', { cwd: '/app' }, (err, stdout, stderr) => {
+    const output = (stdout + stderr).trim();
+    if (err) {
+      res.json({ ok: false, output });
+      return;
+    }
+    res.json({ ok: true, output });
+    // Exit after responding so Docker restarts the container and the entrypoint rebuilds
+    setTimeout(() => process.exit(0), 300);
+  });
 });
 
 router.post('/change-password', requireAuth, (req: Request, res: Response) => {
