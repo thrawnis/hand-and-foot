@@ -5,9 +5,10 @@ import { CreateGamePayload, GameState } from '../types';
 import { scheduleNextBotTurn } from '../services/botStrategy';
 
 const router = Router();
+const SERVER_STARTED_AT = Date.now();
 
 router.get('/health', (_req: Request, res: Response) => {
-  res.json({ status: 'ok', timestamp: Date.now() });
+  res.json({ status: 'ok', timestamp: Date.now(), startedAt: SERVER_STARTED_AT });
 });
 
 router.get('/games', (_req: Request, res: Response) => {

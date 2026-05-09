@@ -160,6 +160,7 @@ export function AdminPage() {
   const [loading, setLoading] = useState(false);
   const [deployState, setDeployState] = useState<DeployState>('idle');
   const [deployOutput, setDeployOutput] = useState<string>('');
+  const [serverStartedAt, setServerStartedAt] = useState<number | null>(null);
 
   const authHeaders = { 'x-admin-token': token ?? '', 'Content-Type': 'application/json' };
 
@@ -178,6 +179,10 @@ export function AdminPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetch('/api/health').then((r) => r.json()).then((d) => setServerStartedAt(d.startedAt ?? null)).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (token) {
@@ -251,7 +256,12 @@ export function AdminPage() {
         await new Promise((r) => setTimeout(r, 2000));
         try {
           const health = await fetch('/api/health');
-          if (health.ok) { setDeployState('done'); return; }
+          if (health.ok) {
+            const hd = await health.json();
+            setServerStartedAt(hd.startedAt ?? null);
+            setDeployState('done');
+            return;
+          }
         } catch { /* still restarting */ }
       }
       setDeployState('error');
@@ -405,6 +415,13 @@ export function AdminPage() {
           </div>
         )}
       </div>
+
+      {/* Footer */}
+      <footer className="max-w-5xl mx-auto w-full px-4 py-6 mt-4 border-t border-felt-700 text-felt-500 text-xs text-center">
+        {serverStartedAt
+          ? <>Server last started <span className="text-felt-400">{new Date(serverStartedAt).toLocaleString()}</span></>
+          : 'Server start time unavailable'}
+      </footer>
 
       {/* Preset editor modal */}
       <Modal
