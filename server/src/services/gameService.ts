@@ -219,6 +219,7 @@ export function toLobbyGame(state: GameState): LobbyGame {
     status: state.status,
     playerCount: state.players.length,
     playerNames: state.players.map((p) => p.name),
+    playerTeamIndices: state.players.map((p) => p.teamIndex),
     lastActionAt: state.lastActionAt,
     createdAt: state.createdAt,
     currentRound: state.currentRound,
