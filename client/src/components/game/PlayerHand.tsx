@@ -76,6 +76,7 @@ interface GroupColProps {
   newCardIds: Set<string>;
   hasOtherSelected: boolean;
   isUngrouped: boolean;
+  isLast: boolean;
   onSelect: (id: string) => void;
   onMoveHere: () => void;
   onRemove: () => void;
@@ -83,7 +84,7 @@ interface GroupColProps {
 
 function GroupCol({
   group, idToCard, selectedCardIds, newCardIds,
-  hasOtherSelected, isUngrouped, onSelect, onMoveHere, onRemove,
+  hasOtherSelected, isUngrouped, isLast, onSelect, onMoveHere, onRemove,
 }: GroupColProps) {
   const cards = group.cardIds.map(id => idToCard.get(id)).filter(Boolean) as Card[];
   const n = cards.length;
@@ -137,7 +138,7 @@ function GroupCol({
               onSelect={() => onSelect(card.id)}
             />
           ))}
-          <GhostDropTarget groupId={group.id} left={ghostLeft} />
+          {isLast && <GhostDropTarget groupId={group.id} left={ghostLeft} />}
         </div>
       </SortableContext>
     </div>
@@ -270,7 +271,7 @@ export function PlayerHand({ gameState, groups, onMoveToGroup, onAddGroup, onRem
           </div>
         ) : (
           <div className="flex items-start gap-0 min-w-min">
-            {groups.map(group => (
+            {groups.map((group, i) => (
               <GroupCol
                 key={group.id}
                 group={group}
@@ -279,6 +280,7 @@ export function PlayerHand({ gameState, groups, onMoveToGroup, onAddGroup, onRem
                 newCardIds={newCardIds}
                 hasOtherSelected={hasSelectedOutside(group.id)}
                 isUngrouped={group.id === UNGROUPED_ID}
+                isLast={i === groups.length - 1}
                 onSelect={toggleCardSelection}
                 onMoveHere={() => handleMoveToGroup(group.id)}
                 onRemove={() => onRemoveGroup(group.id)}
