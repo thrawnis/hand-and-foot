@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-BRANCH="claude/hand-foot-card-game-VF8Fb"
+BRANCH="claude/dashboard-admin-mode-Tjp21"
 
 cd "$(dirname "$0")"
 

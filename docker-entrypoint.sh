@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-BRANCH="claude/hand-foot-card-game-VF8Fb"
+BRANCH="claude/dashboard-admin-mode-Tjp21"
 
 echo "==> Pulling latest code from $BRANCH..."
 git fetch origin "$BRANCH" 2>&1 || true
