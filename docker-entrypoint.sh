@@ -1,8 +1,12 @@
 #!/bin/sh
 set -e
 
-echo "==> Pulling latest code..."
-if ! git pull --ff-only 2>&1; then
+BRANCH="claude/hand-foot-card-game-VF8Fb"
+
+echo "==> Pulling latest code from $BRANCH..."
+git fetch origin "$BRANCH" 2>&1 || true
+git checkout "$BRANCH" 2>&1 || true
+if ! git merge --ff-only "origin/$BRANCH" 2>&1; then
   echo "==> Warning: git pull failed — starting with existing code"
 fi
 

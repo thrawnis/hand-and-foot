@@ -1,21 +1,24 @@
 #!/usr/bin/env bash
 set -e
 
+BRANCH="claude/hand-foot-card-game-VF8Fb"
+
 cd "$(dirname "$0")"
 
-# First-time or Dockerfile-changed: rebuild the image (fast — just apk + git)
-echo "Building image..."
+echo "==> Switching to $BRANCH and pulling latest code..."
+git fetch origin "$BRANCH"
+git checkout "$BRANCH"
+git merge --ff-only "origin/$BRANCH"
+
+# Rebuild the image if the Dockerfile or compose file changed.
+echo "==> Building image..."
 docker compose build
 
-# Start (or restart) the container.
-# The entrypoint inside the container will automatically:
-#   1. git pull  --  fetch the latest committed code
-#   2. npm install + build client
-#   3. npm install + build server
-#   4. start the server
-echo "Starting container (auto-pull + rebuild will run inside)..."
-docker compose up -d
+# Force-recreate ensures the container restarts and runs the entrypoint
+# even if the image layer cache was unchanged.
+echo "==> Restarting container (entrypoint will install deps + build inside)..."
+docker compose up -d --force-recreate
 
-echo "Deployed: $(git rev-parse --short HEAD) — $(git log -1 --format='%s')"
-echo "Done. Tailing logs for 10 seconds (Ctrl+C to stop early)..."
+echo "==> Deployed: $(git rev-parse --short HEAD) — $(git log -1 --format='%s')"
+echo "==> Done. Tailing logs for 10 seconds (Ctrl+C to stop early)..."
 timeout 10 docker compose logs -f || true
