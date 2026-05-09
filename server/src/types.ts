@@ -151,7 +151,7 @@ export interface LobbyGame {
   status: GameStatus;
   playerCount: number;
   playerNames: string[];
-  playerTeamIndices: number[];
+  playerTeamIndices?: number[];
   lastActionAt: number;
   createdAt: number;
   currentRound: number;
