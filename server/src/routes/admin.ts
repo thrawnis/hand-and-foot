@@ -105,15 +105,25 @@ router.delete('/presets/:id', requireAuth, (req: Request, res: Response) => {
 });
 
 router.post('/rebuild', requireAuth, (_req: Request, res: Response) => {
-  exec('git pull --ff-only', { cwd: '/app' }, (err, stdout, stderr) => {
-    const output = (stdout + stderr).trim();
-    if (err) {
-      res.json({ ok: false, output });
+  const opts = { cwd: '/app' };
+  exec('git pull --ff-only', opts, (err, stdout, stderr) => {
+    let output = (stdout + stderr).trim();
+    if (!err) {
+      res.json({ ok: true, output });
+      setTimeout(() => process.exit(0), 300);
       return;
     }
-    res.json({ ok: true, output });
-    // Exit after responding so Docker restarts the container and the entrypoint rebuilds
-    setTimeout(() => process.exit(0), 300);
+    // Pull failed — force-reset to remote
+    output += '\n[pull failed, force-resetting to remote…]';
+    exec('git fetch origin && git reset --hard origin/$(git rev-parse --abbrev-ref HEAD)', opts, (err2, stdout2, stderr2) => {
+      output += '\n' + (stdout2 + stderr2).trim();
+      if (err2) {
+        res.json({ ok: false, output });
+        return;
+      }
+      res.json({ ok: true, output });
+      setTimeout(() => process.exit(0), 300);
+    });
   });
 });
 
