@@ -1,9 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useSortable } from '@dnd-kit/sortable';
+import { useSortable, SortableContext, rectSortingStrategy } from '@dnd-kit/sortable';
 import { useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
-import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable';
 import { Card, ClientGameState } from '../../types';
 import { CardComponent } from './CardComponent';
 import { useGameStore } from '../../store/gameStore';
@@ -93,8 +92,16 @@ function GroupCol({
   const fanHeight = CARD_H + LIFT + 4;
   const totalPoints = cards.reduce((s, c) => s + c.pointValue, 0);
 
+  const { setNodeRef: setDropRef, isOver: isDropOver } = useDroppable({
+    id: `group-drop-${group.id}`,
+    data: { type: 'hand-group', groupId: group.id },
+  });
+
   return (
-    <div className={`flex flex-col shrink-0 ${!isUngrouped ? 'border-l border-felt-700 pl-4' : ''}`}>
+    <div
+      ref={setDropRef}
+      className={`flex flex-col shrink-0 ${!isUngrouped ? 'border-l border-felt-700 pl-4' : ''} ${isDropOver ? 'bg-gold-500/5 rounded-lg' : ''}`}
+    >
       {/* Group header */}
       <div className="flex items-center gap-1.5 mb-1 h-5">
         <span className="text-xs text-felt-500">{totalPoints}pts</span>

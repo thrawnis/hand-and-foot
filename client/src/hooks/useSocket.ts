@@ -159,3 +159,7 @@ export function requestUndo() {
 export function respondUndo(approve: boolean) {
   getSocket().emit('game:respond-undo', { approve });
 }
+
+export function cancelUndo() {
+  getSocket().emit('game:cancel-undo');
+}

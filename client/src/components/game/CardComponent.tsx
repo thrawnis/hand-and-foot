@@ -19,7 +19,7 @@ interface CardProps {
 }
 
 export const sizes = {
-  sm: { card: 'w-10 h-14 text-xs', rank: 'text-sm', suit: 'text-base' },
+  sm: { card: 'w-10 h-14 text-xs', rank: 'text-base', suit: 'text-lg' },
   md: { card: 'w-14 h-20 text-sm', rank: 'text-base', suit: 'text-xl' },
   lg: { card: 'w-16 h-24 text-base', rank: 'text-lg', suit: 'text-2xl' },
 };
@@ -89,9 +89,10 @@ export function CardComponent({
           <div className="text-2xl">🃏</div>
           <div className="text-xs font-bold text-amber-600">WILD</div>
           {selected && (
-            <div className="absolute -top-1 -right-1 w-4 h-4 bg-yellow-400 rounded-full text-xs flex items-center justify-center text-black">✓</div>
+            <div className="absolute -top-1 -right-1 w-5 h-5 bg-yellow-400 rounded-full text-xs flex items-center justify-center text-black font-bold z-10">✓</div>
           )}
         </div>
+        <div className="absolute top-0 right-0 bg-amber-400 text-amber-900 text-xs font-bold px-1 rounded-tr-lg rounded-bl-lg">W</div>
       </motion.div>
     );
   }

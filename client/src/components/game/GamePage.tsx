@@ -4,7 +4,7 @@ import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, MouseSensor, Tou
 import { arrayMove } from '@dnd-kit/sortable';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGameStore } from '../../store/gameStore';
-import { useSocket, joinGame, spectateGame, playCards, closeBook as closeBookAction, requestUndo, respondUndo } from '../../hooks/useSocket';
+import { useSocket, joinGame, spectateGame, playCards, closeBook as closeBookAction, requestUndo, respondUndo, cancelUndo } from '../../hooks/useSocket';
 import { useHandGroups } from '../../hooks/useHandGroups';
 import { ScoreBoard } from './ScoreBoard';
 import { TeamBooksPanel } from './TeamBooksPanel';
@@ -83,18 +83,27 @@ export function GamePage() {
     const activeType = active.data.current?.type;
     const overType = over.data.current?.type;
 
-    // Sort within hand group
+    // Sort within group OR move between groups
     if (activeType === 'hand-card' && overType === 'hand-card') {
       const activeId = String(active.id);
       const overId = String(over.id);
       const activeGroup = findCardGroup(activeId);
-      if (!activeGroup) return;
-      // Only reorder within same group
-      if (activeGroup.cardIds.includes(overId)) {
+      const overGroup = findCardGroup(overId);
+      if (!activeGroup || !overGroup) return;
+      if (activeGroup.id === overGroup.id) {
         const oldIdx = activeGroup.cardIds.indexOf(activeId);
         const newIdx = activeGroup.cardIds.indexOf(overId);
         reorderWithinGroup(activeGroup.id, arrayMove(activeGroup.cardIds, oldIdx, newIdx));
+      } else {
+        moveCardsToGroup([activeId], overGroup.id);
       }
+      return;
+    }
+
+    // Drop card onto a named group container (handles empty groups or gaps between cards)
+    if (activeType === 'hand-card' && overType === 'hand-group') {
+      const targetGroupId = over.data.current?.groupId as string;
+      if (targetGroupId) moveCardsToGroup([String(active.id)], targetGroupId);
       return;
     }
 
@@ -202,13 +211,16 @@ export function GamePage() {
                   ({undoRequest.approvals.length}/{gameState.players.length} approved)
                 </span>
               </div>
+              {!isSpectator && undoRequest.requestedByIndex === myIndex && (
+                <Button variant="danger" size="sm" onClick={cancelUndo} className="shrink-0">✗ Cancel Request</Button>
+              )}
               {!isSpectator && !myUndoApproval && undoRequest.requestedByIndex !== myIndex && (
                 <div className="flex gap-2 shrink-0">
                   <Button variant="primary" size="sm" onClick={() => respondUndo(true)}>✓ Approve</Button>
                   <Button variant="danger" size="sm" onClick={() => respondUndo(false)}>✗ Deny</Button>
                 </div>
               )}
-              {!isSpectator && undoRequest.approvals.includes(myIndex) && (
+              {!isSpectator && undoRequest.approvals.includes(myIndex) && undoRequest.requestedByIndex !== myIndex && (
                 <span className="text-green-400 text-xs shrink-0">You approved</span>
               )}
             </motion.div>

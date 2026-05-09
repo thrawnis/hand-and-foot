@@ -515,6 +515,15 @@ export function respondUndo(
   return { ok: true, applied: false };
 }
 
+export function cancelUndo(state: GameState, playerIndex: number): { ok: boolean; error?: string } {
+  if (!state.undoRequest) return { ok: false, error: 'No undo request pending' };
+  if (state.undoRequest.requestedByIndex !== playerIndex) return { ok: false, error: 'Only the requester can cancel' };
+  state.undoRequest = null;
+  log(state, state.players[playerIndex].name, 'Cancelled their undo request');
+  saveGame(state);
+  return { ok: true };
+}
+
 export function goOut(state: GameState, playerIndex: number): { ok: boolean; error?: string } {
   if (state.currentPlayerIndex !== playerIndex) return { ok: false, error: 'Not your turn' };
   if (state.turnPhase === 'draw') return { ok: false, error: 'Must draw first' };

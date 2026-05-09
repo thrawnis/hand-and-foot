@@ -5,7 +5,7 @@ import {
 } from '../types';
 import {
   toClientState, toLobbyGame, drawFromStock, drawFromDiscard,
-  playCards, closeBook, discardCard, goOut, requestUndo, respondUndo,
+  playCards, closeBook, discardCard, goOut, requestUndo, respondUndo, cancelUndo,
 } from '../services/gameService';
 import { setBroadcast, scheduleNextBotTurn, autoBotUndoApproval } from '../services/botStrategy';
 import { loadGameByCode, saveGame, listGames } from '../db';
@@ -238,6 +238,17 @@ export function registerSocketHandlers(io: Server): void {
       if (!state) { socket.emit('game:error', { message: 'Game not found' }); return; }
 
       const result = respondUndo(state, info.playerIndex, payload.approve);
+      if (!result.ok) { socket.emit('game:error', { message: result.error }); return; }
+      broadcastGame(io, state);
+    });
+
+    socket.on('game:cancel-undo', () => {
+      const info = socketGameMap.get(socket.id);
+      if (!info) { socket.emit('game:error', { message: 'Not in a game' }); return; }
+      const state = loadGameByCode(info.gameCode);
+      if (!state) { socket.emit('game:error', { message: 'Game not found' }); return; }
+
+      const result = cancelUndo(state, info.playerIndex);
       if (!result.ok) { socket.emit('game:error', { message: result.error }); return; }
       broadcastGame(io, state);
     });
