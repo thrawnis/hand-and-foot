@@ -21,4 +21,4 @@ docker compose up -d --force-recreate
 
 echo "==> Deployed: $(git rev-parse --short HEAD) — $(git log -1 --format='%s')"
 echo "==> Done. Tailing logs for 10 seconds (Ctrl+C to stop early)..."
-timeout 10 docker compose logs -f || true
+timeout 15 docker compose logs -f || true
