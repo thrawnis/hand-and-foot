@@ -48,6 +48,7 @@ function FootStatusBadge({ player }: { player: ClientPlayer }) {
 export function OpponentView({ player, playerIndex, gameState, position }: OpponentViewProps) {
   const isCurrentTurn = gameState.currentPlayerIndex === playerIndex;
   const teamColor = player.teamIndex === 0 ? 'border-blue-600 bg-blue-900/30' : 'border-red-700 bg-red-900/30';
+  const cardFaceStyle = player.teamIndex === 0 ? 'bg-blue-800 border-blue-600' : 'bg-red-900 border-red-700';
   const cardCount = player.inFoot ? player.footCount : player.handCount;
 
   return (
@@ -73,7 +74,7 @@ export function OpponentView({ player, playerIndex, gameState, position }: Oppon
         {Array.from({ length: Math.min(cardCount, 5) }).map((_, i) => (
           <div
             key={i}
-            className="w-8 h-12 rounded bg-blue-800 border border-blue-600 shadow-sm"
+            className={`w-8 h-12 rounded border shadow-sm ${cardFaceStyle}`}
             style={{ marginLeft: i > 0 && position === 'top' ? -22 : 0, marginTop: i > 0 && position !== 'top' ? -30 : 0 }}
           />
         ))}

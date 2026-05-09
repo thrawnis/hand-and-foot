@@ -4,19 +4,18 @@ import { motion } from 'framer-motion';
 import { Button } from '../common/Button';
 import toast from 'react-hot-toast';
 
-export const ADMIN_TOKEN_KEY = 'hf_admin_token';
+const ADMIN_TOKEN_KEY = 'hf_admin_token';
 
 export function AdminPage() {
   const navigate = useNavigate();
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // If already logged in, redirect immediately
   useEffect(() => {
     if (localStorage.getItem(ADMIN_TOKEN_KEY)) {
       navigate('/', { replace: true });
     }
-  }, []);
+  }, [navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

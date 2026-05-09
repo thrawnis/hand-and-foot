@@ -5,11 +5,10 @@ import { Button } from '../common/Button';
 
 interface GameCardProps {
   game: LobbyGame;
-  teamColors: string[];
   onJoin: () => void;
+  muted?: boolean;
   onArchive?: () => void;
   onDelete?: () => void;
-  muted?: boolean;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -26,15 +25,14 @@ const STATUS_LABELS: Record<string, string> = {
   archived: 'Archived',
 };
 
-export function GameCard({ game, teamColors, onJoin, onArchive, onDelete, muted }: GameCardProps) {
-  const canJoin = game.status === 'active' || game.status === 'waiting';
+const TEAM_STYLES: Record<number, string> = {
+  0: 'bg-blue-900/60 text-blue-200 border border-blue-700',
+  1: 'bg-red-900/60 text-red-200 border border-red-700',
+};
 
-  // Sort players by play order (index), colour by team
-  const players = game.playerNames.map((name, i) => ({
-    name,
-    teamIndex: game.playerTeamIndices?.[i] ?? (i % 2),
-    playOrder: i,
-  }));
+export function GameCard({ game, onJoin, muted, onArchive, onDelete }: GameCardProps) {
+  const canJoin = game.status === 'active' || game.status === 'waiting';
+  const hasAdminActions = onArchive || onDelete;
 
   return (
     <motion.div
@@ -66,14 +64,17 @@ export function GameCard({ game, teamColors, onJoin, onArchive, onDelete, muted 
 
       {/* Player badges — sorted by play order, coloured by team */}
       <div className="flex flex-wrap gap-1.5">
-        {players.map((p) => (
-          <span
-            key={p.playOrder}
-            className={`px-2 py-0.5 rounded-full text-xs font-medium ${teamColors[p.teamIndex] ?? teamColors[0]}`}
-          >
-            {p.name}
-          </span>
-        ))}
+        {game.playerNames.map((name, i) => {
+          const teamIndex = game.playerTeamIndices?.[i] ?? (i % 2);
+          return (
+            <span
+              key={i}
+              className={`px-2 py-0.5 rounded-full text-xs font-medium ${TEAM_STYLES[teamIndex] ?? TEAM_STYLES[0]}`}
+            >
+              {name}
+            </span>
+          );
+        })}
       </div>
 
       {/* Action row */}
@@ -83,11 +84,15 @@ export function GameCard({ game, teamColors, onJoin, onArchive, onDelete, muted 
             Join / Spectate
           </Button>
         )}
-        {onArchive && (
-          <Button variant="ghost" size="sm" onClick={onArchive}>Archive</Button>
-        )}
-        {onDelete && (
-          <Button variant="danger" size="sm" onClick={onDelete}>Delete</Button>
+        {hasAdminActions && (
+          <>
+            {onArchive && game.status !== 'archived' && (
+              <Button variant="ghost" size="sm" onClick={onArchive}>Archive</Button>
+            )}
+            {onDelete && (
+              <Button variant="danger" size="sm" onClick={onDelete}>Delete</Button>
+            )}
+          </>
         )}
       </div>
     </motion.div>
