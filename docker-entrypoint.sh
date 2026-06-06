@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-BRANCH="claude/dashboard-admin-mode-Tjp21"
+BRANCH="dev"
 
 echo "==> Pulling latest code from $BRANCH..."
 git fetch origin "$BRANCH" 2>&1 || true

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-BRANCH="claude/dashboard-admin-mode-Tjp21"
+BRANCH="dev"
 
 cd "$(dirname "$0")"
 
