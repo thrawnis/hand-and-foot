@@ -1,3 +1,4 @@
+name: hand-and-foot
 services:
   app:
     build:
