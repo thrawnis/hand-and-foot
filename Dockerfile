@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Single-stage image — source code is mounted from the host at runtime.
 # The entrypoint runs git pull + npm build on every container start,
 # so the container always boots with the latest committed code.

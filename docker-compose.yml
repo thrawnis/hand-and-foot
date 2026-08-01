@@ -1,6 +1,7 @@
 name: hand-and-foot
 services:
   app:
+    image: hand-and-foot-app:latest
     build:
       context: .
       dockerfile: Dockerfile
