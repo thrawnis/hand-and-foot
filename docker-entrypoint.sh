@@ -15,14 +15,14 @@ fi
 
 echo "==> Installing client dependencies..."
 cd /app/client
-NODE_ENV=development npm install --silent
+NODE_ENV=development npm ci --silent
 
 echo "==> Building client..."
 npm run build
 
 echo "==> Installing server dependencies..."
 cd /app/server
-NODE_ENV=development npm install --silent
+NODE_ENV=development npm ci --silent
 
 echo "==> Building server..."
 npm run build
