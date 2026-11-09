@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-BRANCH="dev"
+BRANCH="main"
 
 echo "==> Pulling latest code from $BRANCH..."
 git fetch origin "$BRANCH" 2>&1 || true

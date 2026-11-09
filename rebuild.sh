@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-BRANCH="dev"
+BRANCH="main"
 IMAGE_NAME="hand-and-foot-app"
 BUILD_CONTEXT="."
 
