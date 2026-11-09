@@ -5,9 +5,8 @@ A highly visual, real-time multiplayer web implementation of the card game Hand 
 ## Quick Start (Docker — Recommended)
 
 ```bash
-git clone https://github.com/thrawnis/hand-and-foot.git
+git clone <your-repo-url> hand-and-foot
 cd hand-and-foot
-git checkout claude/hand-foot-card-game-VF8Fb
 cp .env.example .env
 ```
 
