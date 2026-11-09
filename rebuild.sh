@@ -24,13 +24,26 @@ echo "==> Switching to $BRANCH and pulling latest code..."
 git fetch origin "$BRANCH"
 git checkout "$BRANCH"
 
-BEFORE_SHA="$(git rev-parse HEAD)"
 git merge --ff-only "origin/$BRANCH"
-AFTER_SHA="$(git rev-parse HEAD)"
+TARGET_SHA="$(git rev-parse HEAD)"
 
-if [ "$BEFORE_SHA" = "$AFTER_SHA" ] && [ "$FORCE" -ne 1 ]; then
-  echo "==> No new commits on $BRANCH ($AFTER_SHA) — nothing to do. Use --force to rebuild anyway."
+# Don't just trust that the host checkout is up to date: check what the
+# running container was actually built from (stamped into the image as a
+# label below). A previous run that pulled the latest code but then failed
+# to build or deploy would otherwise be mistaken for "already up to date".
+RUNNING_CONTAINER="$(docker compose ps -q app 2>/dev/null || true)"
+RUNNING_SHA=""
+if [ -n "$RUNNING_CONTAINER" ]; then
+  RUNNING_SHA="$(docker inspect --format '{{ index .Config.Labels "git.sha" }}' "$RUNNING_CONTAINER" 2>/dev/null || true)"
+fi
+
+if [ "$RUNNING_SHA" = "$TARGET_SHA" ] && [ "$FORCE" -ne 1 ]; then
+  echo "==> Running container is already up to date ($TARGET_SHA) — nothing to do. Use --force to rebuild anyway."
   exit 0
+fi
+
+if [ -n "$RUNNING_SHA" ] && [ "$RUNNING_SHA" != "$TARGET_SHA" ]; then
+  echo "==> Running container is on $RUNNING_SHA, target is $TARGET_SHA — rebuilding."
 fi
 
 # Build directly with `docker buildx build` rather than `docker compose build`.
@@ -40,7 +53,7 @@ fi
 # Dockerfile syntax (# syntax=..., RUN --mount=type=cache, etc.). Calling
 # buildx ourselves sidesteps that detection entirely.
 echo "==> Building image with buildx..."
-BUILDX_ARGS=(--tag "${IMAGE_NAME}:latest" --load)
+BUILDX_ARGS=(--tag "${IMAGE_NAME}:latest" --label "git.sha=${TARGET_SHA}" --load)
 if [ "$PULL_BASE_IMAGES" -eq 1 ]; then
   echo "==> --pull-base-images set: re-checking base image digests against the registry"
   BUILDX_ARGS+=(--pull)
@@ -54,6 +67,6 @@ docker buildx build "${BUILDX_ARGS[@]}" "$BUILD_CONTEXT"
 echo "==> Restarting container (entrypoint will install deps + build inside)..."
 docker compose up -d --no-build --force-recreate app
 
-echo "==> Deployed: $(git rev-parse --short HEAD) — $(git log -1 --format='%s')"
+echo "==> Deployed: ${TARGET_SHA:0:7} — $(git log -1 --format='%s')"
 echo "==> Done. Tailing logs for 15 seconds (Ctrl+C to stop early)..."
 timeout 15 docker compose logs -f || true
