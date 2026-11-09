@@ -9,9 +9,11 @@ BUILD_CONTEXT="."
 # registry. Off by default so a normal rebuild never pays for a registry
 # round-trip it doesn't need.
 PULL_BASE_IMAGES=0
+FORCE=0
 for arg in "$@"; do
   case "$arg" in
     --pull-base-images) PULL_BASE_IMAGES=1 ;;
+    --force) FORCE=1 ;;
     *) echo "Unknown argument: $arg" >&2; exit 1 ;;
   esac
 done
@@ -21,7 +23,15 @@ cd "$(dirname "$0")"
 echo "==> Switching to $BRANCH and pulling latest code..."
 git fetch origin "$BRANCH"
 git checkout "$BRANCH"
+
+BEFORE_SHA="$(git rev-parse HEAD)"
 git merge --ff-only "origin/$BRANCH"
+AFTER_SHA="$(git rev-parse HEAD)"
+
+if [ "$BEFORE_SHA" = "$AFTER_SHA" ] && [ "$FORCE" -ne 1 ]; then
+  echo "==> No new commits on $BRANCH ($AFTER_SHA) — nothing to do. Use --force to rebuild anyway."
+  exit 0
+fi
 
 # Build directly with `docker buildx build` rather than `docker compose build`.
 # Compose's own build step relies on it correctly detecting the buildx plugin;
