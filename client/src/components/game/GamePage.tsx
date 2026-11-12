@@ -4,7 +4,7 @@ import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, MouseSensor, Tou
 import { arrayMove } from '@dnd-kit/sortable';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGameStore } from '../../store/gameStore';
-import { useSocket, joinGame, spectateGame, playCards, closeBook as closeBookAction, requestUndo, respondUndo, cancelUndo } from '../../hooks/useSocket';
+import { useSocket, joinGame, spectateGame, playCards, closeBook as closeBookAction, requestUndo, respondUndo, cancelUndo, requestConvertToBot, respondSeatRequest, cancelSeatRequest } from '../../hooks/useSocket';
 import { useHandGroups } from '../../hooks/useHandGroups';
 import { ScoreBoard } from './ScoreBoard';
 import { TeamBooksPanel } from './TeamBooksPanel';
@@ -29,12 +29,14 @@ export function GamePage() {
   const [loading, setLoading] = useState(true);
 
   const sensors = useSensors(
-    useSensor(MouseSensor),
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
   );
 
   const myIndex = gameState?.myPlayerIndex ?? -1;
-  const myCards = (myIndex >= 0 ? gameState?.players[myIndex]?.hand : undefined) ?? [];
+  const meForCards = myIndex >= 0 ? gameState?.players[myIndex] : undefined;
+  // Once the foot is picked up the server sends those cards as `foot` and the hand is empty.
+  const myCards = (meForCards?.inFoot ? meForCards.foot : meForCards?.hand) ?? [];
   const groupStorageKey = gameState && myIndex >= 0 ? `hf_groups_${gameState.code}_${myIndex}` : null;
   const { groups, addGroup, addGroupWithCard, removeGroup, moveCardsToGroup, reorderWithinGroup, findCardGroup } =
     useHandGroups(groupStorageKey, myCards);
@@ -59,7 +61,7 @@ export function GamePage() {
         if (game.error) { toast.error('Game not found'); navigate('/'); return; }
         setJoinModal({
           id: game.id, code: game.code, status: game.status,
-          playerCount: game.playerCount, playerNames: game.playerNames,
+          playerCount: game.playerCount, playerNames: game.playerNames, playerIsBot: game.playerIsBot,
           lastActionAt: Date.now(), createdAt: Date.now(),
           currentRound: game.currentRound, rules: game.rules,
         });
@@ -173,6 +175,16 @@ export function GamePage() {
   const myUndoApproval = undoRequest ? undoRequest.approvals.includes(myIndex) || undoRequest.denials.includes(myIndex) : false;
   const undoRequesterName = undoRequest ? gameState.players[undoRequest.requestedByIndex]?.name : '';
 
+  // Seat control: absent player -> bot, and bot -> human again
+  const { seatRequest } = gameState;
+  const canAskSeatChange = !isSpectator && !me?.isBot && !seatRequest && gameState.status === 'active';
+  const replaceWithBot = (p: { index: number; isConnected: boolean; isBot?: boolean }) =>
+    canAskSeatChange && !p.isConnected && !p.isBot ? () => requestConvertToBot(p.index) : undefined;
+  const seatTargetName = seatRequest ? gameState.players[seatRequest.targetIndex]?.name : '';
+  const iMustRespondToSeat = !!seatRequest && seatRequest.pendingApproverIndexes.includes(myIndex);
+  const iAskedConvert = !!seatRequest && seatRequest.type === 'convert-to-bot' && seatRequest.requestedByIndex === myIndex;
+  const seatVotesTotal = seatRequest ? seatRequest.approvals.length + seatRequest.pendingApproverIndexes.length : 0;
+
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="h-screen bg-felt-texture flex flex-col overflow-hidden">
@@ -227,12 +239,55 @@ export function GamePage() {
           )}
         </AnimatePresence>
 
+        {/* Seat request banner (replace absent player with a bot / give a seat back) */}
+        <AnimatePresence>
+          {seatRequest && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="bg-sky-900/80 border-b border-sky-600 px-4 py-2 flex items-center justify-between gap-4 shrink-0"
+            >
+              <div className="text-sm">
+                {seatRequest.type === 'convert-to-bot' ? (
+                  <>
+                    <span className="font-bold text-sky-200">{seatRequest.requestedByName}</span>
+                    <span className="text-sky-100"> wants to replace </span>
+                    <span className="font-bold text-sky-200">{seatTargetName}</span>
+                    <span className="text-sky-100"> (away) with a bot </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="font-bold text-sky-200">{seatTargetName}</span>
+                    <span className="text-sky-100"> is back and wants their seat from the bot </span>
+                  </>
+                )}
+                <span className="text-sky-300 text-xs">
+                  ({seatRequest.approvals.length}/{seatVotesTotal} approved)
+                </span>
+              </div>
+              {iMustRespondToSeat && (
+                <div className="flex gap-2 shrink-0">
+                  <Button variant="primary" size="sm" onClick={() => respondSeatRequest(true)}>✓ Approve</Button>
+                  <Button variant="danger" size="sm" onClick={() => respondSeatRequest(false)}>✗ Deny</Button>
+                </div>
+              )}
+              {iAskedConvert && (
+                <Button variant="danger" size="sm" onClick={cancelSeatRequest} className="shrink-0">✗ Cancel Request</Button>
+              )}
+              {!isSpectator && !iMustRespondToSeat && !iAskedConvert && seatRequest.approvals.includes(myIndex) && (
+                <span className="text-green-400 text-xs shrink-0">You approved</span>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Main game area */}
         <div className="flex-1 overflow-hidden flex flex-col min-h-0">
           {topOpponents.length > 0 && (
             <div className="flex items-start justify-center gap-4 p-3 shrink-0 flex-wrap">
               {topOpponents.map((p) => (
-                <OpponentView key={p.index} player={p} playerIndex={p.index} gameState={gameState} position="top" />
+                <OpponentView key={p.index} player={p} playerIndex={p.index} gameState={gameState} position="top" onReplaceWithBot={replaceWithBot(p)} />
               ))}
             </div>
           )}
@@ -241,7 +296,7 @@ export function GamePage() {
             {leftOpponents.length > 0 && (
               <div className="flex flex-col items-end justify-center gap-3 shrink-0 w-28">
                 {leftOpponents.map((p) => (
-                  <OpponentView key={p.index} player={p} playerIndex={p.index} gameState={gameState} position="left" />
+                  <OpponentView key={p.index} player={p} playerIndex={p.index} gameState={gameState} position="left" onReplaceWithBot={replaceWithBot(p)} />
                 ))}
               </div>
             )}
@@ -269,7 +324,7 @@ export function GamePage() {
             {rightOpponents.length > 0 && (
               <div className="flex flex-col items-start justify-center gap-3 shrink-0 w-28">
                 {rightOpponents.map((p) => (
-                  <OpponentView key={p.index} player={p} playerIndex={p.index} gameState={gameState} position="right" />
+                  <OpponentView key={p.index} player={p} playerIndex={p.index} gameState={gameState} position="right" onReplaceWithBot={replaceWithBot(p)} />
                 ))}
               </div>
             )}

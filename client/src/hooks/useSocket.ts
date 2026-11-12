@@ -24,7 +24,7 @@ export function getSocket(): Socket {
 }
 
 export function useSocket() {
-  const { setGameState, setLobbyGames, setMyIdentity, setLastError, setSecondTabPrompt, reset } = useGameStore();
+  const { setGameState, setLobbyGames, setMyIdentity, setLastError, setSecondTabPrompt, setBotSeatPrompt, reset } = useGameStore();
   const socket = getSocket();
 
   useEffect(() => {
@@ -60,6 +60,19 @@ export function useSocket() {
       setSecondTabPrompt(data);
     };
 
+    const onBotSeat = (data: { gameCode: string; playerName: string }) => {
+      setBotSeatPrompt({ ...data, status: 'ask' });
+    };
+
+    const onTakeoverPending = (data: { gameCode: string; playerName: string }) => {
+      setBotSeatPrompt({ ...data, status: 'pending' });
+    };
+
+    const onTakeoverDenied = (data: { gameCode: string }) => {
+      const prompt = useGameStore.getState().botSeatPrompt;
+      if (prompt && prompt.gameCode === data.gameCode) setBotSeatPrompt({ ...prompt, status: 'denied' });
+    };
+
     const onConnect = () => {
       const stored = localStorage.getItem('hf_session');
       if (!stored) return;
@@ -85,6 +98,9 @@ export function useSocket() {
     socket.on('game:error', onGameError);
     socket.on('game:kicked', onGameKicked);
     socket.on('game:second-tab', onSecondTab);
+    socket.on('game:bot-seat', onBotSeat);
+    socket.on('game:takeover-pending', onTakeoverPending);
+    socket.on('game:takeover-denied', onTakeoverDenied);
     socket.on('connect', onConnect);
 
     return () => {
@@ -94,6 +110,9 @@ export function useSocket() {
       socket.off('game:error', onGameError);
       socket.off('game:kicked', onGameKicked);
       socket.off('game:second-tab', onSecondTab);
+      socket.off('game:bot-seat', onBotSeat);
+      socket.off('game:takeover-pending', onTakeoverPending);
+      socket.off('game:takeover-denied', onTakeoverDenied);
       socket.off('connect', onConnect);
     };
   }, []);
@@ -162,4 +181,20 @@ export function respondUndo(approve: boolean) {
 
 export function cancelUndo() {
   getSocket().emit('game:cancel-undo');
+}
+
+export function requestConvertToBot(targetIndex: number) {
+  getSocket().emit('game:request-convert-bot', { targetIndex });
+}
+
+export function requestTakeover(gameCode: string, playerName: string) {
+  getSocket().emit('game:request-takeover', { gameCode, playerName });
+}
+
+export function respondSeatRequest(approve: boolean) {
+  getSocket().emit('game:respond-seat-request', { approve });
+}
+
+export function cancelSeatRequest() {
+  getSocket().emit('game:cancel-seat-request');
 }

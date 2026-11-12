@@ -1,10 +1,27 @@
+import { useEffect, useState } from 'react';
 import { ClientPlayer, ClientGameState } from '../../types';
+import { formatTimeSince } from '../../utils/formatUtils';
 
 interface OpponentViewProps {
   player: ClientPlayer;
   playerIndex: number;
   gameState: ClientGameState;
   position: 'top' | 'left' | 'right';
+  // Set when the viewer may ask for this absent player to be replaced by a bot.
+  onReplaceWithBot?: () => void;
+}
+
+function AwayBadge({ since }: { since?: number }) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => tick((n) => n + 1), 30000);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <span className="text-gray-400 text-xs" title="Not connected">
+      (away{since ? ` · ${formatTimeSince(since)}` : ''})
+    </span>
+  );
 }
 
 function FootStatusBadge({ player }: { player: ClientPlayer }) {
@@ -45,7 +62,7 @@ function FootStatusBadge({ player }: { player: ClientPlayer }) {
   return null;
 }
 
-export function OpponentView({ player, playerIndex, gameState, position }: OpponentViewProps) {
+export function OpponentView({ player, playerIndex, gameState, position, onReplaceWithBot }: OpponentViewProps) {
   const isCurrentTurn = gameState.currentPlayerIndex === playerIndex;
   const teamColor = player.teamIndex === 0 ? 'border-blue-600 bg-blue-900/30' : 'border-red-700 bg-red-900/30';
   const cardFaceStyle = player.teamIndex === 0 ? 'bg-blue-800 border-blue-600' : 'bg-red-900 border-red-700';
@@ -59,8 +76,18 @@ export function OpponentView({ player, playerIndex, gameState, position }: Oppon
           {isCurrentTurn && <span className="text-gold-400 text-xs animate-pulse">⭐</span>}
           <span className="text-white text-sm font-semibold">{player.name}</span>
           {player.isBot && <span title="Bot player" className="text-base leading-none">🤖</span>}
-          {!player.isConnected && !player.isBot && <span className="text-gray-500 text-xs">(away)</span>}
+          {!player.isConnected && !player.isBot && <AwayBadge since={player.disconnectedAt} />}
         </div>
+
+        {onReplaceWithBot && (
+          <button
+            onClick={onReplaceWithBot}
+            title="Ask the other players to let a bot take over this seat"
+            className="text-xs px-2 py-0.5 rounded-full border border-felt-500 text-felt-200 hover:border-gold-400 hover:text-gold-300 transition-colors"
+          >
+            🤖 Replace with bot
+          </button>
+        )}
 
         <FootStatusBadge player={player} />
 

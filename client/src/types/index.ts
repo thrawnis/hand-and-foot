@@ -65,6 +65,17 @@ export interface LogEntry {
   action: string;
 }
 
+export interface SeatRequest {
+  type: 'convert-to-bot' | 'take-over';
+  targetIndex: number;
+  requestedByIndex: number;
+  requestedByName: string;
+  approvals: number[];
+  requestedAt: number;
+  // Seat indexes that still have to approve before it takes effect.
+  pendingApproverIndexes: number[];
+}
+
 export interface RoundScore {
   teamIndex: number;
   bookPoints: number;
@@ -83,6 +94,7 @@ export interface ClientPlayer {
   inFoot: boolean;
   isConnected: boolean;
   isBot?: boolean;
+  disconnectedAt?: number;
   hand?: Card[];
   foot?: Card[];
 }
@@ -107,6 +119,7 @@ export interface ClientGameState {
   drawnFromDiscard: boolean;
   undoRequest: UndoRequest | null;
   hasUndoSnapshot: boolean;
+  seatRequest: SeatRequest | null;
 }
 
 export interface LobbyGame {
@@ -116,6 +129,7 @@ export interface LobbyGame {
   playerCount: number;
   playerNames: string[];
   playerTeamIndices?: number[];
+  playerIsBot?: boolean[];
   lastActionAt: number;
   createdAt: number;
   currentRound: number;

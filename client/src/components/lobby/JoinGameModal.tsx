@@ -57,7 +57,7 @@ export function JoinGameModal({ game, onClose }: JoinGameModalProps) {
           <>
             <p className="text-sm text-felt-300">Select your name:</p>
             <div className="grid grid-cols-2 gap-2">
-              {game.playerNames.map((name) => (
+              {game.playerNames.map((name, i) => (
                 <button
                   key={name}
                   onClick={() => setSelectedName(name)}
@@ -67,10 +67,15 @@ export function JoinGameModal({ game, onClose }: JoinGameModalProps) {
                       : 'bg-felt-700 border-felt-600 text-felt-200 hover:border-felt-400'
                   }`}
                 >
-                  {name}
+                  {name}{game.playerIsBot?.[i] ? ' 🤖' : ''}
                 </button>
               ))}
             </div>
+            {selectedName && game.playerIsBot?.[game.playerNames.indexOf(selectedName)] && (
+              <p className="text-xs text-felt-400">
+                A bot is playing this seat. You can ask the other players to hand it back to you.
+              </p>
+            )}
           </>
         )}
 

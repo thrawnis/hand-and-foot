@@ -1,17 +1,42 @@
 import { Server, Socket } from 'socket.io';
 import {
   JoinGamePayload, DrawDiscardPayload, PlayCardsPayload,
-  DiscardPayload, CloseBookPayload, GameState,
+  DiscardPayload, CloseBookPayload, GameState, RequestTakeoverPayload,
 } from '../types';
 import {
   toClientState, toLobbyGame, drawFromStock, drawFromDiscard,
   playCards, closeBook, discardCard, goOut, requestUndo, respondUndo, cancelUndo,
+  requestConvertToBot, requestTakeover, respondSeatRequest, cancelSeatRequest,
+  evaluateSeatRequest, SeatResult,
 } from '../services/gameService';
-import { setBroadcast, scheduleNextBotTurn, autoBotUndoApproval } from '../services/botStrategy';
+import { setBroadcast, scheduleNextBotTurn, autoBotUndoApproval, resumeBotTurns } from '../services/botStrategy';
 import { loadGameByCode, saveGame, listGames } from '../db';
 
 // Track: socketId -> { gameCode, playerIndex }
 const socketGameMap = new Map<string, { gameCode: string; playerIndex: number }>();
+
+// A human asking for a bot seat back has no seat yet, so remember which socket
+// made the pending request: gameCode -> socketId.
+const takeoverRequesters = new Map<string, string>();
+
+// Connection flags are saved with the game, so after a restart they describe
+// sockets that no longer exist. Clear them; clients reconnect on their own.
+function resetConnectionFlags(): void {
+  for (const row of listGames(false)) {
+    const state: GameState = JSON.parse(row.state);
+    let changed = false;
+    for (const p of state.players) {
+      if (p.isBot) continue;
+      if (p.isConnected || p.socketId) {
+        p.isConnected = false;
+        p.socketId = undefined;
+        p.disconnectedAt = Date.now();
+        changed = true;
+      }
+    }
+    if (changed) saveGame(state);
+  }
+}
 
 function broadcastGame(io: Server, state: GameState): void {
   for (const [socketId, info] of socketGameMap.entries()) {
@@ -35,6 +60,45 @@ function broadcastLobby(io: Server): void {
 
 export function registerSocketHandlers(io: Server): void {
   setBroadcast((state: GameState) => broadcastGame(io, state));
+
+  resetConnectionFlags();
+  resumeBotTurns();
+
+  const isSocketAlive = (socketId?: string): boolean => !!socketId && io.sockets.sockets.has(socketId);
+
+  // A seat request just finished. Wire up whatever the new seat owner needs.
+  const onSeatApplied = (state: GameState, result: SeatResult): void => {
+    if (result.applied === 'convert-to-bot') {
+      // A bot joining mid-vote counts as agreeing to a pending undo.
+      const undone = autoBotUndoApproval(state);
+      broadcastGame(io, state);
+      scheduleNextBotTurn(state);
+      if (undone) broadcastGame(io, state);
+    } else if (result.applied === 'take-over' && result.targetIndex !== undefined) {
+      const player = state.players[result.targetIndex];
+      const socketId = takeoverRequesters.get(state.code);
+      takeoverRequesters.delete(state.code);
+      if (socketId && isSocketAlive(socketId)) {
+        player.socketId = socketId;
+        player.isConnected = true;
+        socketGameMap.set(socketId, { gameCode: state.code, playerIndex: result.targetIndex });
+        saveGame(state);
+        io.to(socketId).emit('game:joined', {
+          playerIndex: result.targetIndex,
+          sessionToken: player.sessionToken,
+          gameCode: state.code,
+        });
+      } else {
+        // Requester vanished while approving — hand the seat straight back to the bot.
+        player.isBot = true;
+        player.isConnected = true;
+        saveGame(state);
+        scheduleNextBotTurn(state);
+      }
+      broadcastGame(io, state);
+    }
+    broadcastLobby(io);
+  };
 
   io.on('connection', (socket: Socket) => {
 
@@ -83,8 +147,14 @@ export function registerSocketHandlers(io: Server): void {
 
       const player = state.players[playerIndex];
 
-      // Check if already connected from another socket
-      if (player.isConnected && player.socketId && player.socketId !== socket.id) {
+      // A bot is playing this seat: a human has to be approved by the others to get it back.
+      if (player.isBot) {
+        socket.emit('game:bot-seat', { gameCode: state.code, playerName: player.name });
+        return;
+      }
+
+      // Check if already connected from another socket (ignoring sockets that are gone)
+      if (player.isConnected && player.socketId && player.socketId !== socket.id && isSocketAlive(player.socketId)) {
         socket.emit('game:second-tab', {
           gameCode: payload.gameCode,
           playerName: player.name,
@@ -100,9 +170,9 @@ export function registerSocketHandlers(io: Server): void {
       }
 
       // Register player as connected
-      const prevSocketId = player.socketId;
       player.isConnected = true;
       player.socketId = socket.id;
+      player.disconnectedAt = undefined;
       socketGameMap.set(socket.id, { gameCode: state.code, playerIndex });
 
       saveGame(state);
@@ -112,8 +182,13 @@ export function registerSocketHandlers(io: Server): void {
         gameCode: state.code,
       });
 
+      // Coming back drops a "replace with bot" vote about this player, and a
+      // newly present player may be the last approver a seat request needed.
+      const seatResult = evaluateSeatRequest(state);
+
       broadcastGame(io, state);
       broadcastLobby(io);
+      if (seatResult.applied) onSeatApplied(state, seatResult);
     });
 
     socket.on('game:kick-old-tab', (payload: { gameCode: string; playerName: string }) => {
@@ -125,6 +200,11 @@ export function registerSocketHandlers(io: Server): void {
       if (playerIndex === -1) return;
       const player = state.players[playerIndex];
 
+      if (player.isBot) {
+        socket.emit('game:bot-seat', { gameCode: state.code, playerName: player.name });
+        return;
+      }
+
       if (player.socketId && player.socketId !== socket.id) {
         io.to(player.socketId).emit('game:kicked', { reason: 'Replaced by new connection' });
         socketGameMap.delete(player.socketId);
@@ -132,6 +212,7 @@ export function registerSocketHandlers(io: Server): void {
 
       player.isConnected = true;
       player.socketId = socket.id;
+      player.disconnectedAt = undefined;
       socketGameMap.set(socket.id, { gameCode: state.code, playerIndex });
       saveGame(state);
       socket.emit('game:joined', { playerIndex, sessionToken: player.sessionToken, gameCode: state.code });
@@ -227,8 +308,10 @@ export function registerSocketHandlers(io: Server): void {
       const result = requestUndo(state, info.playerIndex);
       if (!result.ok) { socket.emit('game:error', { message: result.error }); return; }
       broadcastGame(io, state);
-      autoBotUndoApproval(state);
+      const undone = autoBotUndoApproval(state);
       broadcastGame(io, state);
+      // The undo may have handed the turn to a bot, which nothing else would wake up.
+      if (undone) scheduleNextBotTurn(state);
     });
 
     socket.on('game:respond-undo', (payload: { approve: boolean }) => {
@@ -240,6 +323,7 @@ export function registerSocketHandlers(io: Server): void {
       const result = respondUndo(state, info.playerIndex, payload.approve);
       if (!result.ok) { socket.emit('game:error', { message: result.error }); return; }
       broadcastGame(io, state);
+      if (result.applied) scheduleNextBotTurn(state);
     });
 
     socket.on('game:cancel-undo', () => {
@@ -253,7 +337,88 @@ export function registerSocketHandlers(io: Server): void {
       broadcastGame(io, state);
     });
 
+    // ── Seat control (absent player → bot, bot → human) ──────────────────────
+
+    socket.on('game:request-convert-bot', (payload: { targetIndex: number }) => {
+      const info = socketGameMap.get(socket.id);
+      if (!info) { socket.emit('game:error', { message: 'Not in a game' }); return; }
+      const state = loadGameByCode(info.gameCode);
+      if (!state) { socket.emit('game:error', { message: 'Game not found' }); return; }
+
+      const result = requestConvertToBot(state, info.playerIndex, payload.targetIndex);
+      if (!result.ok) { socket.emit('game:error', { message: result.error }); return; }
+      broadcastGame(io, state);
+      if (result.applied) onSeatApplied(state, result);
+    });
+
+    socket.on('game:request-takeover', (payload: RequestTakeoverPayload) => {
+      const state = loadGameByCode(payload.gameCode);
+      if (!state) { socket.emit('game:error', { message: 'Game not found' }); return; }
+      const targetIndex = state.players.findIndex(
+        (p) => p.name.toLowerCase() === payload.playerName.toLowerCase()
+      );
+      if (targetIndex === -1) { socket.emit('game:error', { message: 'Player name not found in this game' }); return; }
+
+      const result = requestTakeover(state, targetIndex);
+      if (!result.ok) { socket.emit('game:error', { message: result.error }); return; }
+      takeoverRequesters.set(state.code, socket.id);
+      socket.emit('game:takeover-pending', { gameCode: state.code, playerName: state.players[targetIndex].name });
+      broadcastGame(io, state);
+      if (result.applied) onSeatApplied(state, result);
+    });
+
+    socket.on('game:respond-seat-request', (payload: { approve: boolean }) => {
+      const info = socketGameMap.get(socket.id);
+      if (!info) { socket.emit('game:error', { message: 'Not in a game' }); return; }
+      const state = loadGameByCode(info.gameCode);
+      if (!state) { socket.emit('game:error', { message: 'Game not found' }); return; }
+
+      const pending = state.seatRequest;
+      const result = respondSeatRequest(state, info.playerIndex, payload.approve);
+      if (!result.ok) { socket.emit('game:error', { message: result.error }); return; }
+
+      if (pending?.type === 'take-over' && !state.seatRequest && !result.applied) {
+        const requester = takeoverRequesters.get(state.code);
+        takeoverRequesters.delete(state.code);
+        if (requester) io.to(requester).emit('game:takeover-denied', { gameCode: state.code });
+      }
+      broadcastGame(io, state);
+      if (result.applied) onSeatApplied(state, result);
+    });
+
+    socket.on('game:cancel-seat-request', () => {
+      const info = socketGameMap.get(socket.id);
+      // Someone not seated can only be cancelling their own take-over request.
+      const gameCode = info?.gameCode
+        ?? [...takeoverRequesters.entries()].find(([, sid]) => sid === socket.id)?.[0];
+      if (!gameCode) { socket.emit('game:error', { message: 'Not in a game' }); return; }
+      const state = loadGameByCode(gameCode);
+      const req = state?.seatRequest;
+      if (!state || !req) return;
+
+      const isTakeoverRequester = req.type === 'take-over' && takeoverRequesters.get(gameCode) === socket.id;
+      const isConvertRequester = req.type === 'convert-to-bot' && info?.playerIndex === req.requestedByIndex;
+      if (!isTakeoverRequester && !isConvertRequester) {
+        socket.emit('game:error', { message: 'Only the player who asked can cancel' });
+        return;
+      }
+      cancelSeatRequest(state);
+      if (req.type === 'take-over') takeoverRequesters.delete(gameCode);
+      broadcastGame(io, state);
+    });
+
     socket.on('disconnect', () => {
+      // A pending take-over with no one left to receive the seat is pointless.
+      for (const [gameCode, socketId] of takeoverRequesters.entries()) {
+        if (socketId !== socket.id) continue;
+        takeoverRequesters.delete(gameCode);
+        const state = loadGameByCode(gameCode);
+        if (state?.seatRequest?.type === 'take-over') {
+          cancelSeatRequest(state);
+          broadcastGame(io, state);
+        }
+      }
+
       const info = socketGameMap.get(socket.id);
       if (info) {
         const state = loadGameByCode(info.gameCode);
@@ -262,9 +427,13 @@ export function registerSocketHandlers(io: Server): void {
           if (player && player.socketId === socket.id) {
             player.isConnected = false;
             player.socketId = undefined;
+            player.disconnectedAt = Date.now();
             saveGame(state);
+            // One fewer approver may be exactly what a pending seat request was waiting for.
+            const seatResult = evaluateSeatRequest(state);
             broadcastGame(io, state);
             broadcastLobby(io);
+            if (seatResult.applied) onSeatApplied(state, seatResult);
           }
         }
         socketGameMap.delete(socket.id);

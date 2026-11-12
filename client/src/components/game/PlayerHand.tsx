@@ -9,6 +9,7 @@ import { useGameStore } from '../../store/gameStore';
 import { discardCard, drawDiscard, goOut } from '../../hooks/useSocket';
 import { Button } from '../common/Button';
 import { CardGroup, UNGROUPED_ID } from '../../hooks/useHandGroups';
+import { goOutBlocker } from '../../utils/goOut';
 import toast from 'react-hot-toast';
 
 const CARD_W = 40;
@@ -165,8 +166,9 @@ export function PlayerHand({ gameState, groups, onMoveToGroup, onAddGroup, onRem
 
   const isMyTurn = gameState.currentPlayerIndex === myIndex;
   const isDrawPhase = gameState.turnPhase === 'draw';
-  const myCards = me.hand ?? [];
   const isInFoot = me.inFoot;
+  // Once the foot is picked up the server sends those cards as `foot` and the hand is empty.
+  const myCards = (isInFoot ? me.foot : me.hand) ?? [];
   const idToCard = new Map(myCards.map(c => [c.id, c]));
 
   useEffect(() => {
@@ -189,6 +191,11 @@ export function PlayerHand({ gameState, groups, onMoveToGroup, onAddGroup, onRem
   const canDrawDiscard =
     topDiscard && !topDiscard.isWild && !topDiscard.isRed3 && !topDiscard.isBlack3 &&
     myCards.filter(c => c.rank === topDiscard.rank && !c.isWild).length >= 2;
+
+  // Discarding the last foot card is how you go out — allowed only once the team can.
+  const goOutReason = isInFoot ? goOutBlocker(gameState, me.teamIndex) : 'Not in foot';
+  const canGoOut = goOutReason === null;
+  const lastCardGoesOut = isInFoot && myCards.length === 1 && canGoOut;
 
   const handleDiscard = () => {
     if (selectedCardIds.length !== 1) { toast.error('Select exactly 1 card to discard'); return; }
@@ -250,15 +257,27 @@ export function PlayerHand({ gameState, groups, onMoveToGroup, onAddGroup, onRem
             )
           ) : (
             <>
-              <Button variant="secondary" size="sm" onClick={handleDiscard} disabled={selectedCardIds.length !== 1}>
-                🗑 Discard Selected
-              </Button>
+              {lastCardGoesOut ? (
+                <Button variant="gold" size="sm" onClick={() => setShowGoOutConfirm(true)}>
+                  🏆 Discard Last Card &amp; Go Out
+                </Button>
+              ) : (
+                <Button variant="secondary" size="sm" onClick={handleDiscard} disabled={selectedCardIds.length !== 1}>
+                  🗑 Discard Selected
+                </Button>
+              )}
               {isInFoot && myCards.length === 0 && (
                 <Button variant="gold" size="sm" onClick={() => setShowGoOutConfirm(true)}>🏆 Go Out!</Button>
               )}
             </>
           )}
         </div>
+      )}
+
+      {isMyTurn && !isDrawPhase && isInFoot && !canGoOut && (
+        <p className="text-xs text-felt-400">
+          Your team can't go out yet ({goOutReason}) — keep at least 2 cards in your foot so you can still discard.
+        </p>
       )}
 
       {/* Hand groups — all on one horizontal row, scrolls sideways if needed */}
@@ -311,7 +330,17 @@ export function PlayerHand({ gameState, groups, onMoveToGroup, onAddGroup, onRem
             </div>
             <div className="flex gap-2 shrink-0">
               <Button variant="ghost" size="sm" onClick={() => setShowGoOutConfirm(false)}>Cancel</Button>
-              <Button variant="gold" size="sm" onClick={() => { setShowGoOutConfirm(false); goOut(); }}>Go Out!</Button>
+              <Button
+                variant="gold"
+                size="sm"
+                onClick={() => {
+                  setShowGoOutConfirm(false);
+                  if (myCards.length === 1) { discardCard(myCards[0].id); clearSelection(); }
+                  else goOut();
+                }}
+              >
+                Go Out!
+              </Button>
             </div>
           </motion.div>
         )}

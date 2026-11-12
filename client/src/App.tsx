@@ -3,6 +3,7 @@ import { Toaster } from 'react-hot-toast';
 import { LobbyPage } from './components/lobby/LobbyPage';
 import { GamePage } from './components/game/GamePage';
 import { AdminPage } from './components/admin/AdminPage';
+import { BotSeatModal } from './components/game/BotSeatModal';
 
 export function App() {
   return (
@@ -24,6 +25,7 @@ export function App() {
           },
         }}
       />
+      <BotSeatModal />
       <Routes>
         <Route path="/" element={<LobbyPage />} />
         <Route path="/game/:code" element={<GamePage />} />

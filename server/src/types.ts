@@ -32,6 +32,7 @@ export interface Player {
   socketId?: string;
   sessionToken: string;
   isBot?: boolean;
+  disconnectedAt?: number;
 }
 
 export interface Team {
@@ -72,6 +73,21 @@ export interface UndoRequest {
   denials: number[];
 }
 
+// A pending vote to change who controls a seat.
+//  - convert-to-bot: an absent human's seat is handed to a bot; the requester
+//    is an already-seated human.
+//  - take-over: a human asks for a bot seat back; the requester has no seat yet
+//    (requestedByIndex === -1).
+// Every connected human other than the target must approve.
+export interface SeatRequest {
+  type: 'convert-to-bot' | 'take-over';
+  targetIndex: number;
+  requestedByIndex: number;
+  requestedByName: string;
+  approvals: number[];
+  requestedAt: number;
+}
+
 export interface LogEntry {
   timestamp: number;
   playerName: string;
@@ -107,6 +123,7 @@ export interface GameState {
   drawnFromDiscard: boolean;
   lastTurnSnapshot: Omit<GameState, 'lastTurnSnapshot' | 'undoRequest'> | null;
   undoRequest: UndoRequest | null;
+  seatRequest?: SeatRequest | null;
 }
 
 // What each client sees (hands masked for non-self players)
@@ -119,6 +136,7 @@ export interface ClientPlayer {
   inFoot: boolean;
   isConnected: boolean;
   isBot?: boolean;
+  disconnectedAt?: number;
   hand?: Card[];
   foot?: Card[];
 }
@@ -143,6 +161,12 @@ export interface ClientGameState {
   drawnFromDiscard: boolean;
   undoRequest: UndoRequest | null;
   hasUndoSnapshot: boolean;
+  seatRequest: ClientSeatRequest | null;
+}
+
+export interface ClientSeatRequest extends SeatRequest {
+  // Seat indexes that still need to approve before the request is applied.
+  pendingApproverIndexes: number[];
 }
 
 export interface LobbyGame {
@@ -152,6 +176,7 @@ export interface LobbyGame {
   playerCount: number;
   playerNames: string[];
   playerTeamIndices?: number[];
+  playerIsBot?: boolean[];
   lastActionAt: number;
   createdAt: number;
   currentRound: number;
@@ -187,6 +212,11 @@ export interface PlayCardsPayload {
 
 export interface DiscardPayload {
   cardId: string;
+}
+
+export interface RequestTakeoverPayload {
+  gameCode: string;
+  playerName: string;
 }
 
 export interface CloseBookPayload {

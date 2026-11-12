@@ -35,8 +35,18 @@ interface GameStore {
   secondTabPrompt: { gameCode: string; playerName: string } | null;
   setSecondTabPrompt: (p: { gameCode: string; playerName: string } | null) => void;
 
+  // Seat is played by a bot: the human who tried to join it can ask for it back
+  botSeatPrompt: BotSeatPrompt | null;
+  setBotSeatPrompt: (p: BotSeatPrompt | null) => void;
+
   // Reset
   reset: () => void;
+}
+
+export interface BotSeatPrompt {
+  gameCode: string;
+  playerName: string;
+  status: 'ask' | 'pending' | 'denied';
 }
 
 export const useGameStore = create<GameStore>((set, get) => ({
@@ -73,7 +83,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
   secondTabPrompt: null,
   setSecondTabPrompt: (p) => set({ secondTabPrompt: p }),
 
+  botSeatPrompt: null,
+  setBotSeatPrompt: (p) => set({ botSeatPrompt: p }),
+
   reset: () => set({
+    botSeatPrompt: null,
     gameState: null,
     myPlayerIndex: -1,
     sessionToken: null,

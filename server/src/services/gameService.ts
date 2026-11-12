@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import {
   GameState, GameRules, Player, Team, Book, Card, Rank,
-  ClientGameState, ClientPlayer, LobbyGame, TurnPhase,
+  ClientGameState, ClientPlayer, LobbyGame, TurnPhase, SeatRequest,
   CreateGamePayload, DrawDiscardPayload, PlayCardsPayload,
   DiscardPayload, CloseBookPayload,
 } from '../types';
@@ -89,11 +89,44 @@ function reshuffleDiscardIntoStock(state: GameState): void {
   log(state, 'System', 'Discard pile reshuffled into stock');
 }
 
+// Whether this player's team could end the round right now. `books` lets callers
+// ask "what if these books existed" before committing a play.
+export function goOutCheck(
+  state: GameState,
+  playerIndex: number,
+  books?: Book[],
+): { ok: boolean; reason?: string } {
+  const player = state.players[playerIndex];
+  const team = state.teams[player.teamIndex];
+  if (!player.inFoot) return { ok: false, reason: 'Must be in your foot to go out' };
+  if (!team.playerIndices.every((i) => state.players[i].inFoot)) {
+    return { ok: false, reason: 'All team members must have picked up their foot' };
+  }
+  const req = teamMeetsGoOutRequirements({ ...team, books: books ?? team.books }, state.rules);
+  return req.meets ? { ok: true } : { ok: false, reason: req.reason };
+}
+
+// A player in their foot must always be able to finish the turn: they either
+// discard (needs a card to spare) or go out. So a play may not leave them with
+// fewer than 2 cards unless the team could go out afterwards.
+function footRetentionError(
+  state: GameState,
+  playerIndex: number,
+  cardsLeft: number,
+  hypotheticalBooks: Book[],
+): string | null {
+  const player = state.players[playerIndex];
+  if (!player.inFoot || cardsLeft >= 2) return null;
+  const chk = goOutCheck(state, playerIndex, hypotheticalBooks);
+  if (chk.ok) return null;
+  return `Your team can't go out yet (${chk.reason}), so keep at least 2 cards in your foot — one to discard and one to hold.`;
+}
+
 // ── Game creation ─────────────────────────────────────────────────────────────
 
 function snapshotState(state: GameState): Omit<GameState, 'lastTurnSnapshot' | 'undoRequest'> {
   // Deep copy via JSON (acceptable for game state size)
-  const { lastTurnSnapshot, undoRequest, ...rest } = state;
+  const { lastTurnSnapshot, undoRequest, seatRequest, ...rest } = state;
   return JSON.parse(JSON.stringify(rest));
 }
 
@@ -163,6 +196,7 @@ export function createGame(payload: CreateGamePayload): GameState {
     drawnFromDiscard: false,
     lastTurnSnapshot: null,
     undoRequest: null,
+    seatRequest: null,
   };
 
   log(state, 'System', `Game started. Round 1 of ${fullRules.numRounds}.`);
@@ -184,6 +218,7 @@ export function toClientState(state: GameState, playerIndex: number): ClientGame
       inFoot: p.inFoot,
       isConnected: p.isConnected,
       isBot: p.isBot,
+      disconnectedAt: p.isBot ? undefined : p.disconnectedAt,
       hand: isMe ? p.hand : undefined,
       foot: isMe ? (p.inFoot ? p.foot : undefined) : undefined,
     };
@@ -209,6 +244,9 @@ export function toClientState(state: GameState, playerIndex: number): ClientGame
     drawnFromDiscard: state.drawnFromDiscard,
     undoRequest: state.undoRequest,
     hasUndoSnapshot: state.lastTurnSnapshot !== null,
+    seatRequest: state.seatRequest
+      ? { ...state.seatRequest, pendingApproverIndexes: pendingApprovers(state, state.seatRequest) }
+      : null,
   };
 }
 
@@ -220,6 +258,7 @@ export function toLobbyGame(state: GameState): LobbyGame {
     playerCount: state.players.length,
     playerNames: state.players.map((p) => p.name),
     playerTeamIndices: state.players.map((p) => p.teamIndex),
+    playerIsBot: state.players.map((p) => !!p.isBot),
     lastActionAt: state.lastActionAt,
     createdAt: state.createdAt,
     currentRound: state.currentRound,
@@ -353,6 +392,9 @@ export function playCards(state: GameState, playerIndex: number, payload: PlayCa
       isClosed: cardsToPlay.length >= state.rules.minCardsPerBook,
     };
 
+    const keepErr = footRetentionError(state, playerIndex, source.length - cardsToPlay.length, [...team.books, book]);
+    if (keepErr) return { ok: false, error: keepErr };
+
     team.books.push(book);
     if (!team.hasOpened) team.hasOpened = true;
     removeCardsFromPlayer(player, payload.cardIds);
@@ -390,6 +432,19 @@ export function playCards(state: GameState, playerIndex: number, payload: PlayCa
     }
 
     const newWilds = cardsToPlay.filter((c) => c.isWild);
+    const combinedCount = book.cards.length + cardsToPlay.length;
+    const afterAdd: Book = {
+      ...book,
+      cards: [...book.cards, ...cardsToPlay],
+      isClean: book.isClean && newWilds.length === 0,
+      isClosed: book.isClosed || combinedCount >= state.rules.minCardsPerBook,
+    };
+    const keepErr = footRetentionError(
+      state, playerIndex, source.length - cardsToPlay.length,
+      targetTeam.books.map((b) => (b.id === book.id ? afterAdd : b)),
+    );
+    if (keepErr) return { ok: false, error: keepErr };
+
     if (newWilds.length > 0 && book.isClean) {
       book.isClean = false;
     }
@@ -441,13 +496,22 @@ export function discardCard(state: GameState, playerIndex: number, payload: Disc
   const card = source.find((c) => c.id === payload.cardId);
   if (!card) return { ok: false, error: 'Card not found in hand' };
 
-  // Removing this card would empty foot — check if going out is valid
-  if (player.inFoot && source.length === 1) {
-    return { ok: false, error: 'Cannot discard to go out from foot. Play all remaining cards to books.' };
+  // Discarding the last foot card is how you go out — only legal when the team can.
+  const goingOut = player.inFoot && source.length === 1;
+  if (goingOut) {
+    const chk = goOutCheck(state, playerIndex);
+    if (!chk.ok) return { ok: false, error: `Can't discard your last card — your team can't go out yet (${chk.reason}).` };
   }
 
   removeCardsFromPlayer(player, [payload.cardId]);
   state.discardPile.push(card);
+
+  if (goingOut) {
+    log(state, player.name, `Went out by discarding ${card.rank} of ${card.suit}`);
+    finishRound(state, playerIndex);
+    saveGame(state);
+    return { ok: true, roundOver: true };
+  }
 
   // Auto pick up foot if hand is empty
   if (!player.inFoot && player.hand.length === 0) {
@@ -504,7 +568,19 @@ export function respondUndo(
   if (state.undoRequest.approvals.length >= state.players.length) {
     // Everyone approved — apply undo
     const snap = state.lastTurnSnapshot!;
-    Object.assign(state, snap, { lastTurnSnapshot: null, undoRequest: null });
+    // Who is a bot / connected / which socket they use is live information, not
+    // part of the turn being reverted — keep it, or undo would turn converted
+    // bots back into absent humans and drop everyone's connection.
+    const live = state.players.map((p) => ({
+      isBot: p.isBot,
+      isConnected: p.isConnected,
+      socketId: p.socketId,
+      sessionToken: p.sessionToken,
+      disconnectedAt: p.disconnectedAt,
+    }));
+    const seatRequest = state.seatRequest ?? null;
+    Object.assign(state, snap, { lastTurnSnapshot: null, undoRequest: null, seatRequest });
+    state.players.forEach((p, i) => Object.assign(p, live[i]));
     log(state, 'System', 'Undo approved by all players — last turn reverted');
     saveGame(state);
     return { ok: true, applied: true };
@@ -524,23 +600,157 @@ export function cancelUndo(state: GameState, playerIndex: number): { ok: boolean
   return { ok: true };
 }
 
+// ── Seat control: absent player → bot, bot → human again ──────────────────────
+
+function isPresentHuman(p: Player): boolean {
+  return !p.isBot && p.isConnected;
+}
+
+// Everyone who still has to approve: every connected human except the target seat.
+export function pendingApprovers(state: GameState, req: SeatRequest): number[] {
+  const out: number[] = [];
+  state.players.forEach((p, i) => {
+    if (i !== req.targetIndex && isPresentHuman(p) && !req.approvals.includes(i)) out.push(i);
+  });
+  return out;
+}
+
+export type SeatResult = {
+  ok: boolean;
+  error?: string;
+  applied?: 'convert-to-bot' | 'take-over';
+  targetIndex?: number;
+};
+
+// Applies the pending request once nobody is left to approve. Also drops a
+// request whose premise no longer holds (absent player came back, bot is gone).
+export function evaluateSeatRequest(state: GameState): SeatResult {
+  const req = state.seatRequest;
+  if (!req) return { ok: true };
+  const target = state.players[req.targetIndex];
+
+  const stale =
+    !target ||
+    state.status !== 'active' ||
+    (req.type === 'convert-to-bot' && (target.isBot || target.isConnected)) ||
+    (req.type === 'take-over' && !target.isBot);
+  if (stale) {
+    state.seatRequest = null;
+    if (target) log(state, 'System', `Seat request for ${target.name} is no longer needed`);
+    saveGame(state);
+    return { ok: true };
+  }
+
+  if (pendingApprovers(state, req).length > 0) return { ok: true };
+
+  state.seatRequest = null;
+  if (req.type === 'convert-to-bot') {
+    target.isBot = true;
+    target.isConnected = true;
+    target.socketId = undefined;
+    target.disconnectedAt = undefined;
+    log(state, 'System', `${target.name} was away — their seat is now played by a bot`);
+  } else {
+    target.isBot = false;
+    target.isConnected = true;
+    target.disconnectedAt = undefined;
+    target.sessionToken = uuidv4();
+    log(state, 'System', `${target.name} took their seat back from the bot`);
+  }
+  saveGame(state);
+  return { ok: true, applied: req.type, targetIndex: req.targetIndex };
+}
+
+export function requestConvertToBot(state: GameState, requesterIndex: number, targetIndex: number): SeatResult {
+  if (state.status !== 'active') return { ok: false, error: 'Game is not active' };
+  if (state.seatRequest) return { ok: false, error: 'Another seat request is already pending' };
+  const requester = state.players[requesterIndex];
+  if (!requester || !isPresentHuman(requester)) return { ok: false, error: 'Only connected players can do this' };
+  const target = state.players[targetIndex];
+  if (!target) return { ok: false, error: 'Player not found' };
+  if (targetIndex === requesterIndex) return { ok: false, error: "You can't replace yourself with a bot" };
+  if (target.isBot) return { ok: false, error: `${target.name} is already a bot` };
+  if (target.isConnected) return { ok: false, error: `${target.name} is connected` };
+
+  state.seatRequest = {
+    type: 'convert-to-bot',
+    targetIndex,
+    requestedByIndex: requesterIndex,
+    requestedByName: requester.name,
+    approvals: [requesterIndex],
+    requestedAt: Date.now(),
+  };
+  log(state, requester.name, `Asked to replace ${target.name} (away) with a bot — waiting for the other players to approve`);
+  saveGame(state);
+  return evaluateSeatRequest(state);
+}
+
+export function requestTakeover(state: GameState, targetIndex: number): SeatResult {
+  if (state.status !== 'active') return { ok: false, error: 'Game is not active' };
+  if (state.seatRequest) return { ok: false, error: 'Another seat request is already pending' };
+  const target = state.players[targetIndex];
+  if (!target) return { ok: false, error: 'Player not found' };
+  if (!target.isBot) return { ok: false, error: `${target.name} is not a bot` };
+
+  state.seatRequest = {
+    type: 'take-over',
+    targetIndex,
+    requestedByIndex: -1,
+    requestedByName: target.name,
+    approvals: [],
+    requestedAt: Date.now(),
+  };
+  log(state, target.name, 'Asked to take their seat back from the bot — waiting for approval');
+  saveGame(state);
+  return evaluateSeatRequest(state);
+}
+
+export function respondSeatRequest(state: GameState, playerIndex: number, approve: boolean): SeatResult {
+  const req = state.seatRequest;
+  if (!req) return { ok: false, error: 'No seat request pending' };
+  if (!pendingApprovers(state, req).includes(playerIndex)) {
+    return { ok: false, error: 'You are not able to respond to this request' };
+  }
+  const player = state.players[playerIndex];
+  if (!approve) {
+    state.seatRequest = null;
+    log(state, player.name, 'Denied the seat request');
+    saveGame(state);
+    return { ok: true };
+  }
+  req.approvals.push(playerIndex);
+  log(state, player.name, 'Approved the seat request');
+  saveGame(state);
+  return evaluateSeatRequest(state);
+}
+
+export function cancelSeatRequest(state: GameState): void {
+  if (!state.seatRequest) return;
+  const target = state.players[state.seatRequest.targetIndex];
+  state.seatRequest = null;
+  log(state, 'System', `Seat request for ${target?.name ?? 'a player'} was cancelled`);
+  saveGame(state);
+}
+
 export function goOut(state: GameState, playerIndex: number): { ok: boolean; error?: string } {
   if (state.currentPlayerIndex !== playerIndex) return { ok: false, error: 'Not your turn' };
   if (state.turnPhase === 'draw') return { ok: false, error: 'Must draw first' };
 
   const player = state.players[playerIndex];
-  if (!player.inFoot) return { ok: false, error: 'Must be in your foot to go out' };
-
-  const team = state.teams[player.teamIndex];
-  if (!team.allInFoot) return { ok: false, error: 'All team members must have picked up their foot' };
-
-  const req = teamMeetsGoOutRequirements(team, state.rules);
-  if (!req.meets) return { ok: false, error: req.reason };
+  const chk = goOutCheck(state, playerIndex);
+  if (!chk.ok) return { ok: false, error: chk.reason };
 
   if (player.foot.length > 0) return { ok: false, error: 'Must play all cards from foot before going out' };
   if (player.hand.length > 0) return { ok: false, error: 'Must play all cards before going out' };
 
-  // End the round
+  finishRound(state, playerIndex);
+  saveGame(state);
+  return { ok: true };
+}
+
+// Scores the round for a player who has just gone out, then either ends the game or deals the next round.
+function finishRound(state: GameState, playerIndex: number): void {
+  const player = state.players[playerIndex];
   const roundScores = scoreRound(state, playerIndex);
   state.roundScores.push(roundScores);
 
@@ -560,12 +770,8 @@ export function goOut(state: GameState, playerIndex: number): { ok: boolean; err
       : `${maxScore} points after ${state.rules.numRounds} rounds`;
     log(state, 'System', `Game over! Team ${state.winnerTeamIndex + 1} wins — ${reason}.`);
   } else {
-    // Start next round
     startNextRound(state);
   }
-
-  saveGame(state);
-  return { ok: true };
 }
 
 function startNextRound(state: GameState): void {

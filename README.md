@@ -71,6 +71,16 @@ npm run dev
 
 If you get disconnected, the browser will try to reconnect you automatically. If the game is still active you'll be prompted to rejoin. If you open the game on a second device/tab, you'll be asked whether to kick the old connection or stay on it.
 
+### Absent players and bots
+
+If a player drops out and the game is waiting on them, anyone still connected can click **Replace with bot** next to that player. Every other connected player must approve; once they do, a bot plays that seat from where the player left off. Bots decide from the visible game state (their cards, both teams' books, the discard pile) — nothing is random.
+
+When the original player comes back, joining that seat shows a prompt to ask for it back. Every connected human player must approve, and the seat then returns to them with a fresh session.
+
+### Going out
+
+Going out needs every team member in their foot and the required closed books. Discarding your last foot card goes out when the team can; if it can't yet, you must keep at least 2 cards in your foot so you still have a card to discard.
+
 ---
 
 ## Game Rules (Defaults)

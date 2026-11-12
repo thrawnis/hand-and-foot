@@ -40,6 +40,7 @@ router.get('/games/:code', (req: Request, res: Response) => {
     status: state.status,
     playerNames: state.players.map((p) => p.name),
     playerTeamIndices: state.players.map((p) => p.teamIndex),
+    playerIsBot: state.players.map((p) => !!p.isBot),
     playerCount: state.players.length,
     currentRound: state.currentRound,
     rules: state.rules,
