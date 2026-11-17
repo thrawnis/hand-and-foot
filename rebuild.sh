@@ -52,8 +52,13 @@ main() {
 
   if [ "$RUNNING_SHA" = "$TARGET_SHA" ] && [ "$FORCE" -ne 1 ]; then
     echo "==> Running container is already up to date ($TARGET_SHA) — nothing to do. Use --force to rebuild anyway."
+    echo "##DEPLOY_STATUS:NO_CHANGE##"
     exit 0
   fi
+
+  # Machine-readable signal for Deployment Helper; printed before the build so it
+  # reflects "new code detected", independent of whether the deploy then succeeds.
+  echo "##DEPLOY_STATUS:UPDATED##"
 
   if [ -n "$RUNNING_SHA" ] && [ "$RUNNING_SHA" != "$TARGET_SHA" ]; then
     echo "==> Running container is on $RUNNING_SHA, target is $TARGET_SHA — rebuilding."
