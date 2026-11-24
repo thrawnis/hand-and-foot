@@ -31,10 +31,6 @@ interface GameStore {
   lastError: string | null;
   setLastError: (e: string | null) => void;
 
-  // Second tab prompt
-  secondTabPrompt: { gameCode: string; playerName: string } | null;
-  setSecondTabPrompt: (p: { gameCode: string; playerName: string } | null) => void;
-
   // Seat is played by a bot: the human who tried to join it can ask for it back
   botSeatPrompt: BotSeatPrompt | null;
   setBotSeatPrompt: (p: BotSeatPrompt | null) => void;
@@ -80,9 +76,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
   lastError: null,
   setLastError: (e) => set({ lastError: e }),
 
-  secondTabPrompt: null,
-  setSecondTabPrompt: (p) => set({ secondTabPrompt: p }),
-
   botSeatPrompt: null,
   setBotSeatPrompt: (p) => set({ botSeatPrompt: p }),
 
@@ -93,6 +86,5 @@ export const useGameStore = create<GameStore>((set, get) => ({
     sessionToken: null,
     selectedCardIds: [],
     lastError: null,
-    secondTabPrompt: null,
   }),
 }));

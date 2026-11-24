@@ -27,9 +27,8 @@ function resetConnectionFlags(): void {
     let changed = false;
     for (const p of state.players) {
       if (p.isBot) continue;
-      if (p.isConnected || p.socketId) {
+      if (p.isConnected) {
         p.isConnected = false;
-        p.socketId = undefined;
         p.disconnectedAt = Date.now();
         changed = true;
       }
@@ -66,6 +65,32 @@ export function registerSocketHandlers(io: Server): void {
 
   const isSocketAlive = (socketId?: string): boolean => !!socketId && io.sockets.sockets.has(socketId);
 
+  // A player can be signed in on several devices at once: every connection is
+  // tracked in socketGameMap, and the player only counts as away once the last
+  // one is gone.
+  const detachSocket = (socketId: string): void => {
+    const info = socketGameMap.get(socketId);
+    if (!info) return;
+    socketGameMap.delete(socketId);
+
+    const stillHere = [...socketGameMap.values()].some(
+      (i) => i.gameCode === info.gameCode && i.playerIndex === info.playerIndex,
+    );
+    if (stillHere) return;
+
+    const state = loadGameByCode(info.gameCode);
+    const player = state?.players[info.playerIndex];
+    if (!state || !player || player.isBot) return;
+    player.isConnected = false;
+    player.disconnectedAt = Date.now();
+    saveGame(state);
+    // One fewer approver may be exactly what a pending seat request was waiting for.
+    const seatResult = evaluateSeatRequest(state);
+    broadcastGame(io, state);
+    broadcastLobby(io);
+    if (seatResult.applied) onSeatApplied(state, seatResult);
+  };
+
   // A seat request just finished. Wire up whatever the new seat owner needs.
   const onSeatApplied = (state: GameState, result: SeatResult): void => {
     if (result.applied === 'convert-to-bot') {
@@ -79,7 +104,6 @@ export function registerSocketHandlers(io: Server): void {
       const socketId = takeoverRequesters.get(state.code);
       takeoverRequesters.delete(state.code);
       if (socketId && isSocketAlive(socketId)) {
-        player.socketId = socketId;
         player.isConnected = true;
         socketGameMap.set(socketId, { gameCode: state.code, playerIndex: result.targetIndex });
         saveGame(state);
@@ -117,7 +141,7 @@ export function registerSocketHandlers(io: Server): void {
     });
 
     socket.on('game:join', (payload: JoinGamePayload) => {
-      const state = loadGameByCode(payload.gameCode);
+      let state = loadGameByCode(payload.gameCode);
       if (!state) {
         socket.emit('game:error', { message: 'Game not found' });
         return;
@@ -145,21 +169,11 @@ export function registerSocketHandlers(io: Server): void {
         }
       }
 
-      const player = state.players[playerIndex];
+      let player = state.players[playerIndex];
 
       // A bot is playing this seat: a human has to be approved by the others to get it back.
       if (player.isBot) {
         socket.emit('game:bot-seat', { gameCode: state.code, playerName: player.name });
-        return;
-      }
-
-      // Check if already connected from another socket (ignoring sockets that are gone)
-      if (player.isConnected && player.socketId && player.socketId !== socket.id && isSocketAlive(player.socketId)) {
-        socket.emit('game:second-tab', {
-          gameCode: payload.gameCode,
-          playerName: player.name,
-          existingSocketId: player.socketId,
-        });
         return;
       }
 
@@ -169,9 +183,17 @@ export function registerSocketHandlers(io: Server): void {
         return;
       }
 
-      // Register player as connected
+      // This socket may have been in another seat or game (same tab, new game).
+      const previous = socketGameMap.get(socket.id);
+      if (previous && (previous.gameCode !== state.code || previous.playerIndex !== playerIndex)) {
+        detachSocket(socket.id);
+        // detachSocket saved the old seat as away; work from that, not our earlier copy.
+        state = loadGameByCode(payload.gameCode)!;
+        player = state.players[playerIndex];
+      }
+
+      // Register this device. Other devices signed in as the same player stay connected.
       player.isConnected = true;
-      player.socketId = socket.id;
       player.disconnectedAt = undefined;
       socketGameMap.set(socket.id, { gameCode: state.code, playerIndex });
 
@@ -189,34 +211,6 @@ export function registerSocketHandlers(io: Server): void {
       broadcastGame(io, state);
       broadcastLobby(io);
       if (seatResult.applied) onSeatApplied(state, seatResult);
-    });
-
-    socket.on('game:kick-old-tab', (payload: { gameCode: string; playerName: string }) => {
-      const state = loadGameByCode(payload.gameCode);
-      if (!state) return;
-      const playerIndex = state.players.findIndex(
-        (p) => p.name.toLowerCase() === payload.playerName.toLowerCase()
-      );
-      if (playerIndex === -1) return;
-      const player = state.players[playerIndex];
-
-      if (player.isBot) {
-        socket.emit('game:bot-seat', { gameCode: state.code, playerName: player.name });
-        return;
-      }
-
-      if (player.socketId && player.socketId !== socket.id) {
-        io.to(player.socketId).emit('game:kicked', { reason: 'Replaced by new connection' });
-        socketGameMap.delete(player.socketId);
-      }
-
-      player.isConnected = true;
-      player.socketId = socket.id;
-      player.disconnectedAt = undefined;
-      socketGameMap.set(socket.id, { gameCode: state.code, playerIndex });
-      saveGame(state);
-      socket.emit('game:joined', { playerIndex, sessionToken: player.sessionToken, gameCode: state.code });
-      broadcastGame(io, state);
     });
 
     socket.on('game:spectate', (payload: { gameCode: string }) => {
@@ -419,25 +413,7 @@ export function registerSocketHandlers(io: Server): void {
         }
       }
 
-      const info = socketGameMap.get(socket.id);
-      if (info) {
-        const state = loadGameByCode(info.gameCode);
-        if (state) {
-          const player = state.players[info.playerIndex];
-          if (player && player.socketId === socket.id) {
-            player.isConnected = false;
-            player.socketId = undefined;
-            player.disconnectedAt = Date.now();
-            saveGame(state);
-            // One fewer approver may be exactly what a pending seat request was waiting for.
-            const seatResult = evaluateSeatRequest(state);
-            broadcastGame(io, state);
-            broadcastLobby(io);
-            if (seatResult.applied) onSeatApplied(state, seatResult);
-          }
-        }
-        socketGameMap.delete(socket.id);
-      }
+      detachSocket(socket.id);
     });
   });
 }

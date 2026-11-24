@@ -69,7 +69,7 @@ npm run dev
 
 ### Reconnecting
 
-If you get disconnected, the browser will try to reconnect you automatically. If the game is still active you'll be prompted to rejoin. If you open the game on a second device/tab, you'll be asked whether to kick the old connection or stay on it.
+If you get disconnected, the browser will try to reconnect you automatically. If the game is still active you'll be prompted to rejoin. You can be signed in as the same player on several devices or tabs at once; they all stay connected and see the same game, and you only show as away to others once the last one is gone.
 
 ### Absent players and bots
 

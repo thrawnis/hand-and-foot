@@ -574,7 +574,6 @@ export function respondUndo(
     const live = state.players.map((p) => ({
       isBot: p.isBot,
       isConnected: p.isConnected,
-      socketId: p.socketId,
       sessionToken: p.sessionToken,
       disconnectedAt: p.disconnectedAt,
     }));
@@ -647,7 +646,6 @@ export function evaluateSeatRequest(state: GameState): SeatResult {
   if (req.type === 'convert-to-bot') {
     target.isBot = true;
     target.isConnected = true;
-    target.socketId = undefined;
     target.disconnectedAt = undefined;
     log(state, 'System', `${target.name} was away — their seat is now played by a bot`);
   } else {

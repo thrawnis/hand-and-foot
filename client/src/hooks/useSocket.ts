@@ -24,7 +24,7 @@ export function getSocket(): Socket {
 }
 
 export function useSocket() {
-  const { setGameState, setLobbyGames, setMyIdentity, setLastError, setSecondTabPrompt, setBotSeatPrompt, reset } = useGameStore();
+  const { setGameState, setLobbyGames, setMyIdentity, setLastError, setBotSeatPrompt, reset } = useGameStore();
   const socket = getSocket();
 
   useEffect(() => {
@@ -48,16 +48,6 @@ export function useSocket() {
     const onGameError = (data: { message: string }) => {
       setLastError(data.message);
       toast.error(data.message, { duration: 4000 });
-    };
-
-    const onGameKicked = (data: { reason: string }) => {
-      toast.error(`Disconnected: ${data.reason}`);
-      localStorage.removeItem('hf_session');
-      reset();
-    };
-
-    const onSecondTab = (data: { gameCode: string; playerName: string }) => {
-      setSecondTabPrompt(data);
     };
 
     const onBotSeat = (data: { gameCode: string; playerName: string }) => {
@@ -96,8 +86,6 @@ export function useSocket() {
     socket.on('lobby:games', onLobbyGames);
     socket.on('game:joined', onGameJoined);
     socket.on('game:error', onGameError);
-    socket.on('game:kicked', onGameKicked);
-    socket.on('game:second-tab', onSecondTab);
     socket.on('game:bot-seat', onBotSeat);
     socket.on('game:takeover-pending', onTakeoverPending);
     socket.on('game:takeover-denied', onTakeoverDenied);
@@ -108,8 +96,6 @@ export function useSocket() {
       socket.off('lobby:games', onLobbyGames);
       socket.off('game:joined', onGameJoined);
       socket.off('game:error', onGameError);
-      socket.off('game:kicked', onGameKicked);
-      socket.off('game:second-tab', onSecondTab);
       socket.off('game:bot-seat', onBotSeat);
       socket.off('game:takeover-pending', onTakeoverPending);
       socket.off('game:takeover-denied', onTakeoverDenied);
@@ -127,10 +113,6 @@ export function joinGame(gameCode: string, playerName: string, sessionToken?: st
 
 export function spectateGame(gameCode: string) {
   getSocket().emit('game:spectate', { gameCode });
-}
-
-export function kickOldTab(gameCode: string, playerName: string) {
-  getSocket().emit('game:kick-old-tab', { gameCode, playerName });
 }
 
 export function drawStock() {

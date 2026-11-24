@@ -13,7 +13,6 @@ import { StockAndDiscard } from './StockAndDiscard';
 import { OpponentView } from './OpponentView';
 import { GameLog } from './GameLog';
 import { CardComponent } from './CardComponent';
-import { SecondTabModal } from './SecondTabModal';
 import { JoinGameModal } from '../lobby/JoinGameModal';
 import { Button } from '../common/Button';
 import { Card, LobbyGame } from '../../types';
@@ -344,7 +343,6 @@ export function GamePage() {
         </div>
 
         <ScoreBoard gameState={gameState} open={showScoreBoard} onClose={() => setShowScoreBoard(false)} />
-        <SecondTabModal />
 
         <DragOverlay>
           {draggingCard && <CardComponent card={draggingCard} size="md" className="rotate-6 opacity-90" />}

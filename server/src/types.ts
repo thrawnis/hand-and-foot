@@ -29,7 +29,6 @@ export interface Player {
   foot: Card[];
   inFoot: boolean;
   isConnected: boolean;
-  socketId?: string;
   sessionToken: string;
   isBot?: boolean;
   disconnectedAt?: number;
@@ -224,10 +223,6 @@ export interface CloseBookPayload {
   teamIndex: number;
 }
 
-export interface KickTabPayload {
-  choice: 'kick' | 'block';
-}
-
 export interface CreateGamePayload {
   hostName: string;
   rules: GameRules;
@@ -236,7 +231,3 @@ export interface CreateGamePayload {
   botSlots?: boolean[];
 }
 
-export interface SecondTabPrompt {
-  gameCode: string;
-  playerName: string;
-}
